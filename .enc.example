@@ -1,0 +1,5 @@
+# Example encrypted-secrets file format (placeholder values)
+# Copy to .env.enc and replace with your own encrypted payloads.
+# Decrypt into process env before running the scraper.
+EFDA_USERNAME_ENC=ENC[v1:base64:WW91cl9lbmNyeXB0ZWRfdXNlcm5hbWU=]
+EFDA_PASSWORD_ENC=ENC[v1:base64:WW91cl9lbmNyeXB0ZWRfcGFzc3dvcmQ=]

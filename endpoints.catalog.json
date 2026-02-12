@@ -1,0 +1,15 @@
+{
+  "imports_list": {
+    "method": "GET",
+    "path": "/api/imports",
+    "params": {
+      "page": "{page}",
+      "page_size": "{page_size}"
+    }
+  },
+  "imports_detail": {
+    "method": "GET",
+    "path": "/api/imports/{id}",
+    "params": {}
+  }
+}

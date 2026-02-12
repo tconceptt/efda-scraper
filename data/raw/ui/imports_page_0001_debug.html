@@ -1,0 +1,178 @@
+<!DOCTYPE html><html lang="en"><head><meta http-equiv="origin-trial" content="A7vZI3v+Gz7JfuRolKNM4Aff6zaGuT7X0mf3wtoZTnKv6497cVMnhy03KDqX7kBz/q/iidW7srW31oQbBt4VhgoAAACUeyJvcmlnaW4iOiJodHRwczovL3d3dy5nb29nbGUuY29tOjQ0MyIsImZlYXR1cmUiOiJEaXNhYmxlVGhpcmRQYXJ0eVN0b3JhZ2VQYXJ0aXRpb25pbmczIiwiZXhwaXJ5IjoxNzU3OTgwODAwLCJpc1N1YmRvbWFpbiI6dHJ1ZSwiaXNUaGlyZFBhcnR5Ijp0cnVlfQ==">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+
+    <title>Welcome to eRIS | SSO</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.png">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.png">
+
+    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootswatch/4.5.2/cosmo/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/site.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.2/css/all.min.css" integrity="sha512-1sCRPdkRXhBV2PBLUdRb4tMg1w2YPf37qatUFeS7zlBy7jJI8Lf4VHwWfZZfpXtYSLy85pkm9GaYVYMfw5BC1A==" crossorigin="anonymous" referrerpolicy="no-referrer">
+
+<link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"><script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script></head>
+<body>
+
+     <script type="text/javascript" async="" charset="utf-8" src="https://www.gstatic.com/recaptcha/releases/gYdqkxiddE5aXrugNbBbKgtN/recaptcha__en.js" crossorigin="anonymous" integrity="sha384-pktkxR6IDISlZiipN/N1lvOVg6ziczd2QVhiOC2agGLBDL5x0fDDzwmTUfQufQMA"></script><script src="/_content/NToastNotify/toastr.js?8.0.0.0" type="text/javascript"></script>
+<script>
+    if (nToastNotify) {
+        nToastNotify.init({
+            firstLoadEvent: 'DOMContentLoaded',
+            messages: [],
+            responseHeaderKey: 'X-NToastNotify-Messages',
+            requestHeaderKey: 'X-Requested-With',
+            libraryDetails:{"varName":"toastr","scriptSrc":"https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js","styleHref":"https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css","options":{"positionClass":"toast-top-right","progressBar":false,"type":"success"}},
+            disableAjaxToasts:false
+        });
+    };
+</script>
+
+<script src="https://www.google.com/recaptcha/api.js" async="" defer=""></script>
+<div class="container-fluid">
+    <div class="d-flex justify-content-start align-items-center">
+        <div class="row">
+            <div class="col-lg-6 col-sm-12 order-last order-lg-first d-flex flex-column justify-content-around align-items-center p-5 e-sidebar">
+                <div class="row">
+                    <img src="/img/login-lmg.svg" class="img-fluid bg-image col-lg-12" alt="">
+
+                    <div class="col-lg-12">
+
+                        <div id="erisInfoIndicator" class="carousel slide" data-ride="carousel">
+                            <ol class="carousel-indicators">
+                                <li data-target="#erisInfoIndicator" data-slide-to="0" class=""></li>
+                                <li data-target="#erisInfoIndicator" data-slide-to="1" class=""></li>
+                                <li data-target="#erisInfoIndicator" data-slide-to="2" class="active"></li>
+                            </ol>
+                            <div class="carousel-inner">
+                                <div class="carousel-item">
+                                    <div class="my-5">
+                                        <span class="d-flex">
+                                            <svg id="Layer_1" height="28" viewBox="0 0 512 512" width="28" fill="white" xmlns="http://www.w3.org/2000/svg">
+                                                <g>
+                                                    <path d="m464.866 72.3h-417.732c-26.337 0-47.134 21.39-47.134 47.134v273.133c0 26.336 21.39 47.133 47.134 47.133h417.732c26.337 0 47.134-21.39 47.134-47.134v-273.132c0-26.338-21.39-47.134-47.134-47.134zm17.134 320.266c0 9.456-7.658 17.134-17.134 17.134h-417.732c-9.456 0-17.134-7.658-17.134-17.134v-273.132c0-9.456 7.658-17.134 17.134-17.134h417.732c9.456 0 17.134 7.658 17.134 17.134z"></path>
+                                                    <path d="m200.74 292.703c8.716-9.759 14.027-22.62 14.027-36.703 0-30.419-24.748-55.167-55.167-55.167s-55.166 24.748-55.166 55.167c0 14.083 5.311 26.944 14.026 36.702-22.843 13.926-38.127 39.077-38.127 67.731 0 8.284 6.716 15 15 15h128.533c8.284 0 15-6.716 15-15 0-28.654-15.284-53.804-38.126-67.73zm-41.14-61.87c13.877 0 25.167 11.29 25.167 25.167s-11.29 25.167-25.167 25.167-25.166-11.29-25.166-25.167 11.289-25.167 25.166-25.167zm-46.933 114.601c6.36-19.854 24.995-34.267 46.933-34.267s40.572 14.412 46.933 34.267z"></path>
+                                                    <path d="m416.667 216.9h-112.467c-8.284 0-15 6.716-15 15s6.716 15 15 15h112.467c8.284 0 15-6.716 15-15s-6.716-15-15-15z"></path>
+                                                    <path d="m416.667 136.566h-321.334c-8.284 0-15 6.716-15 15s6.716 15 15 15h321.334c8.284 0 15-6.716 15-15s-6.716-15-15-15z"></path>
+                                                    <path d="m416.667 281.167h-112.467c-8.284 0-15 6.716-15 15s6.716 15 15 15h112.467c8.284 0 15-6.716 15-15s-6.716-15-15-15z"></path>
+                                                    <path d="m384.533 345.434h-80.333c-8.284 0-15 6.716-15 15s6.716 15 15 15h80.333c8.284 0 15-6.716 15-15s-6.716-15-15-15z"></path>
+                                                </g>
+                                            </svg>
+                                            <p class="lead text-white font-weight-bold pl-2">iLicense</p>
+                                        </span>
+
+                                        <p class="text-white lead">
+                                            iLicense is an online application that allows importers,
+                                            exporters, wholesalers and manufacturers to apply for the
+                                            certificate of competency and FMHACA staff to manage these
+                                            applications online.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="carousel-item">
+                                    <div class="my-5">
+                                        <span class="d-flex">
+                                            <svg id="_x31_" enable-background="new 0 0 24 24" height="28" viewBox="0 0 24 24" width="28" fill="white" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="m11.894 24c-.131 0-.259-.052-.354-.146-.118-.118-.17-.288-.137-.451l.707-3.535c.02-.098.066-.187.137-.256l7.778-7.778c.584-.584 1.537-.584 2.121 0l1.414 1.414c.585.585.585 1.536 0 2.121l-7.778 7.778c-.069.07-.158.117-.256.137l-3.535.707c-.032.006-.065.009-.097.009zm1.168-3.789-.53 2.651 2.651-.53 7.671-7.671c.195-.195.195-.512 0-.707l-1.414-1.414c-.195-.195-.512-.195-.707 0zm2.367 2.582h.01z"></path>
+                                                <path d="m9.5 21h-7c-1.379 0-2.5-1.121-2.5-2.5v-13c0-1.379 1.121-2.5 2.5-2.5h2c.276 0 .5.224.5.5s-.224.5-.5.5h-2c-.827 0-1.5.673-1.5 1.5v13c0 .827.673 1.5 1.5 1.5h7c.276 0 .5.224.5.5s-.224.5-.5.5z"></path>
+                                                <path d="m16.5 12c-.276 0-.5-.224-.5-.5v-6c0-.827-.673-1.5-1.5-1.5h-2c-.276 0-.5-.224-.5-.5s.224-.5.5-.5h2c1.379 0 2.5 1.121 2.5 2.5v6c0 .276-.224.5-.5.5z"></path>
+                                                <path d="m11.5 6h-6c-.827 0-1.5-.673-1.5-1.5v-2c0-.276.224-.5.5-.5h1.55c.232-1.14 1.243-2 2.45-2s2.218.86 2.45 2h1.55c.276 0 .5.224.5.5v2c0 .827-.673 1.5-1.5 1.5zm-6.5-3v1.5c0 .275.225.5.5.5h6c.275 0 .5-.225.5-.5v-1.5h-1.5c-.276 0-.5-.224-.5-.5 0-.827-.673-1.5-1.5-1.5s-1.5.673-1.5 1.5c0 .276-.224.5-.5.5z"></path>
+                                                <path d="m13.5 9h-10c-.276 0-.5-.224-.5-.5s.224-.5.5-.5h10c.276 0 .5.224.5.5s-.224.5-.5.5z"></path>
+                                                <path d="m13.5 12h-10c-.276 0-.5-.224-.5-.5s.224-.5.5-.5h10c.276 0 .5.224.5.5s-.224.5-.5.5z"></path>
+                                                <path d="m13.5 15h-10c-.276 0-.5-.224-.5-.5s.224-.5.5-.5h10c.276 0 .5.224.5.5s-.224.5-.5.5z"></path>
+                                            </svg>
+                                            <p class="lead text-white font-weight-bold pl-2">iRegister</p>
+                                        </span>
+
+                                        <p class="text-white lead pl-2">
+                                            iRegister is an online application which allows importers to
+                                            apply for and receive medicine registration certificate to
+                                            import medicines online and EFDA staff to manage these
+                                            applications online.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="carousel-item active">
+                                    <div class="my-5">
+                                        <span class="d-flex">
+                                            <svg id="bold" enable-background="new 0 0 24 24" height="28" fill="white" viewBox="0 0 24 24" width="28" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="m13.735 12.795-4.5-4.25c-.15-.141-.235-.338-.235-.545s.085-.404.235-.545l4.5-4.25c.477-.449 1.265-.113 1.265.545v2.25h5.25c1.241 0 2.25-1.009 2.25-2.25 0-.414.336-.75.75-.75s.75.336.75.75v1.5c0 2.619-2.131 4.75-4.75 4.75h-4.25v2.25c0 .659-.789.993-1.265.545z"></path>
+                                                <path d="m23 17h-1v-5.592c-.623.279-1.295.469-2 .547v5.045h-16v-10h3.198c.147-.375.367-.719.664-1l1.059-1h-4.921c-1.103 0-2 .897-2 2v10h-1c-.552 0-1 .447-1 1s.448 1 1 1h22c.552 0 1-.447 1-1s-.448-1-1-1z"></path>
+                                            </svg>
+                                            <p class="lead text-white font-weight-bold pl-2">iImport</p>
+                                        </span>
+
+                                        <p class="text-white lead">
+                                            iImport is an online application which allows importers to
+                                            apply for and receive permits to import medicines online and
+                                            EFDA staff to manage these applications online.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+             </div>
+            <div class="col-lg-6 col-sm-12 order-first order-lg-last col-md-12">
+                <div class="card-body d-flex flex-column vh-100 justify-content-center mx-lg-3">
+                    <img src="/img/efda.png" alt="FDRE Logo" class="img-fluid align-self-center pb-2" style="width: 12em; height: 5em">
+                    <div class="card-title e-card-title">Welcome to eRIS</div>
+                    <div class="e-card-subtitle">Ethiopian Food and Drug Authority</div>
+                        <div class="alert alert-danger">
+        <strong>Error</strong>
+        <div class="danger validation-summary-errors" data-valmsg-summary="true"><ul><li>Invalid username or password</li>
+</ul></div>
+    </div>
+
+                    <form class="d-flex flex-column px-lg-5" action="" method="post">
+
+                        <input type="hidden" id="ReturnUrl" name="ReturnUrl" value="/connect/authorize/callback?client_id=eris-portal-spa&amp;redirect_uri=https%3A%2F%2Fportal.eris.efda.gov.et%2Fauth-callback%3Fto%3Dsignin&amp;response_type=code&amp;scope=openid%20profile&amp;state=54431f7b24f440cc9206877f004ac822&amp;code_challenge=WOwI-8TrkaAwblIghQ3VXuY8YXyXt7rIHob3fKuIfWE&amp;code_challenge_method=S256&amp;response_mode=query">
+
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input class="form-control input-md" id="username" name="username" type="text" placeholder="username" data-val="true" data-val-required="The Username field is required." value="your_username">
+                            <span class="text-danger field-validation-valid" data-valmsg-for="Username" data-valmsg-replace="true"></span>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="e-password-label-wrapper">
+                                <div class="flex justify-space-between pt-2">
+                                    <label for="username">Password</label>
+                                    <a href="/account/forgot" class="float-right">
+                                        Forgot Password?
+                                    </a>
+                                </div>
+
+                                <input class="form-control input-md" id="password" name="password" type="password" placeholder="**********" autocomplete="off" data-val="true" data-val-required="The Password field is required.">
+                                <span class="text-danger field-validation-valid" data-valmsg-for="Password" data-valmsg-replace="true"></span>
+
+                            </div>
+
+                            <button class="btn btn-primary btn-block my-3" name="button" value="login">
+                                Login
+                            </button>
+
+                            <a href="/account/register" class="float-right">
+                                Don't have account? Create one.
+                            </a>
+                        </div>
+                    <input name="__RequestVerificationToken" type="hidden" value="CfDJ8DshhG57syBNn-G1VlDRw5Ke48gM0jb3Vacss-qvsxAPRzGIEFPKMxTxLxHxCXyjf43gVDc8AeVeQCL3t0QlQxn7PoJqr8o3RB6yqzDnACPBGTDUaX-Ij_wHo6sAagjF6P_RwUuf2JsJi4XDi9hFDWs"></form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.slim.min.js"></script>
+    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+
+
+    
+
+
+</body></html>

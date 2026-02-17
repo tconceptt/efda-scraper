@@ -248,6 +248,43 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
     )
 
 
+CONCURRENCY_PRODUCTS = 10
+
+
+async def fetch_import_products(
+    client: httpx.AsyncClient,
+    import_id: int,
+    import_number: str,
+    headers: dict,
+    semaphore: asyncio.Semaphore,
+) -> tuple[int, str, list | None, int]:
+    """Fetch product details for a single import. Returns (import_id, import_number, details_or_None, status_code)."""
+    async with semaphore:
+        for attempt in range(3):
+            try:
+                resp = await client.get(
+                    f"{API_BASE}/api/ImportPermit/{import_id}",
+                    headers=headers,
+                )
+                break
+            except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError) as exc:
+                log.warning("Request failed for %d (attempt %d): %s", import_id, attempt + 1, exc)
+                if attempt == 2:
+                    return import_id, import_number, None, 0
+                await asyncio.sleep(2 * (attempt + 1))
+
+        if resp.status_code != 200:
+            return import_id, import_number, None, resp.status_code
+
+        try:
+            body = resp.json()
+        except Exception:
+            return import_id, import_number, None, resp.status_code
+
+        details = body.get("importPermitDetails", [])
+        return import_id, import_number, details, resp.status_code
+
+
 async def scrape_products(limit: int | None = None):
     # Step 1: Get auth token
     bearer_token = await get_bearer_token()
@@ -284,7 +321,7 @@ async def scrape_products(limit: int | None = None):
         len(all_imports),
     )
 
-    # Step 4: Fetch details
+    # Step 4: Fetch details concurrently in batches
     headers = {
         "Authorization": bearer_token,
         "Accept": "application/json, text/plain, */*",
@@ -297,76 +334,74 @@ async def scrape_products(limit: int | None = None):
     consecutive_errors = 0
     retried_auth = False
 
+    semaphore = asyncio.Semaphore(CONCURRENCY_PRODUCTS)
     transport = httpx.AsyncHTTPTransport(retries=3)
     async with httpx.AsyncClient(timeout=120.0, transport=transport) as client:
-        for idx, (import_id, import_number) in enumerate(to_process):
-            # Retry loop
-            for attempt in range(3):
-                try:
-                    resp = await client.get(
-                        f"{API_BASE}/api/ImportPermit/{import_id}",
-                        headers=headers,
-                    )
-                    break
-                except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError) as exc:
-                    log.warning("Request failed for %d (attempt %d): %s", import_id, attempt + 1, exc)
-                    if attempt == 2:
-                        raise
-                    await asyncio.sleep(2 * (attempt + 1))
+        for batch_start in range(0, len(to_process), CONCURRENCY_PRODUCTS):
+            batch = to_process[batch_start:batch_start + CONCURRENCY_PRODUCTS]
 
-            # 401 retry: token may have expired — re-login once
-            if resp.status_code == 401 and not retried_auth:
-                log.warning("Got 401 — saved token expired. Doing fresh login...")
+            tasks = [
+                fetch_import_products(client, imp_id, imp_num, headers, semaphore)
+                for imp_id, imp_num in batch
+            ]
+            results = await asyncio.gather(*tasks)
+
+            # Check for 401s — re-auth once and retry failed ones
+            needs_retry = []
+            for import_id, import_number, details, status_code in results:
+                if status_code == 401:
+                    needs_retry.append((import_id, import_number))
+
+            if needs_retry and not retried_auth:
+                log.warning("Got 401 for %d imports — token expired. Doing fresh login...", len(needs_retry))
                 bearer_token = await _login_for_token()
                 headers["Authorization"] = bearer_token
                 retried_auth = True
-                # Retry this import
-                try:
-                    resp = await client.get(
-                        f"{API_BASE}/api/ImportPermit/{import_id}",
-                        headers=headers,
-                    )
-                except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError):
-                    pass
+                retry_tasks = [
+                    fetch_import_products(client, imp_id, imp_num, headers, semaphore)
+                    for imp_id, imp_num in needs_retry
+                ]
+                retry_results = await asyncio.gather(*retry_tasks)
+                # Replace 401 results with retried results
+                retry_map = {r[0]: r for r in retry_results}
+                results = [
+                    retry_map.get(r[0], r) if r[3] == 401 else r
+                    for r in results
+                ]
 
-            if resp.status_code != 200:
-                log.warning("HTTP %d for import %d (%s)", resp.status_code, import_id, import_number)
-                consecutive_errors += 1
-                errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    log.error("Too many consecutive errors. Token may have expired.")
-                    break
-                await asyncio.sleep(5)
-                continue
+            # Process results and upsert to DB
+            batch_stop = False
+            for import_id, import_number, details, status_code in results:
+                if details is None:
+                    if status_code != 0:
+                        log.warning("HTTP %d for import %d (%s)", status_code, import_id, import_number)
+                    else:
+                        log.warning("Request failed for import %d (%s)", import_id, import_number)
+                    consecutive_errors += 1
+                    errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        log.error("Too many consecutive errors. Token may have expired.")
+                        batch_stop = True
+                        break
+                    continue
 
-            try:
-                body = resp.json()
-            except Exception:
-                log.warning("Non-JSON response for import %d", import_id)
-                consecutive_errors += 1
-                errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    break
-                await asyncio.sleep(5)
-                continue
-
-            consecutive_errors = 0
-            details = body.get("importPermitDetails", [])
-
-            for item in details:
-                upsert_product(conn, item, import_number)
-                total_products += 1
+                consecutive_errors = 0
+                for item in details:
+                    upsert_product(conn, item, import_number)
+                    total_products += 1
 
             conn.commit()
 
-            if (idx + 1) % 10 == 0 or idx == 0:
-                log.info(
-                    "[%d/%d] Import %s: %d products (total: %d)",
-                    idx + 1, len(to_process), import_number, len(details), total_products,
-                )
+            processed = min(batch_start + len(batch), len(to_process))
+            log.info(
+                "[%d/%d] Batch done: %d products so far (%d errors)",
+                processed, len(to_process), total_products, errors,
+            )
 
-            # Throttle
-            await asyncio.sleep(1.0)
+            if batch_stop:
+                break
+
+            await asyncio.sleep(0.3)
 
     # Step 5: Export CSV
     log.info("Exporting products to CSV...")

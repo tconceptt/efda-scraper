@@ -217,6 +217,41 @@ def is_before_cutoff(rec: dict) -> bool:
     return req_date < DATE_CUTOFF
 
 
+CONCURRENCY_PAGES = 5
+
+
+async def fetch_page(
+    client: httpx.AsyncClient,
+    offset: int,
+    headers: dict,
+    user_id: str,
+    semaphore: asyncio.Semaphore,
+) -> tuple[int, httpx.Response | None]:
+    """Fetch a single page of records with retries. Returns (offset, response)."""
+    max_retries = 5
+    async with semaphore:
+        for attempt in range(max_retries):
+            try:
+                log.info("Fetching records %d - %d ...", offset, offset + PAGE_SIZE)
+                resp = await client.post(
+                    f"{API_BASE}/api/ImportPermit/List",
+                    data=build_form_data(offset, PAGE_SIZE, user_id),
+                    headers=headers,
+                )
+                return offset, resp
+            except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError) as exc:
+                wait_time = 2.0 * (2 ** attempt)
+                log.warning(
+                    "Request failed (attempt %d/%d) at offset %d: %s. Retrying in %.1fs...",
+                    attempt + 1, max_retries, offset, exc, wait_time,
+                )
+                if attempt == max_retries - 1:
+                    log.error("Max retries reached at offset %d.", offset)
+                    return offset, None
+                await asyncio.sleep(wait_time)
+    return offset, None
+
+
 async def scrape_all(full: bool = False):
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -267,128 +302,168 @@ async def scrape_all(full: bool = False):
         "Referer": PORTAL_URL,
     }
 
-    # Always start from offset 0 (newest first)
     all_records: list[dict] = []
-    offset = 0
     total_records = None
-    max_retries = 5
-    base_delay = 2.0
     consecutive_errors = 0
     max_consecutive_errors = 3
     stop_reason = "unknown"
     new_records = 0
     skipped_old = 0
 
+    semaphore = asyncio.Semaphore(CONCURRENCY_PAGES)
     transport = httpx.AsyncHTTPTransport(retries=3)
     async with httpx.AsyncClient(timeout=120.0, transport=transport) as client:
-        while True:
-            fields = build_form_data(offset, PAGE_SIZE, user_id)
-            resp = None
+        # -- Fetch first page sequentially to get recordsTotal --
+        _, first_resp = await fetch_page(client, 0, headers, user_id, semaphore)
 
-            for attempt in range(max_retries):
-                try:
-                    log.info("Fetching records %d - %d ...", offset, offset + PAGE_SIZE)
-                    resp = await client.post(
-                        f"{API_BASE}/api/ImportPermit/List",
-                        data=fields,
-                        headers=headers,
-                    )
-                    break
-                except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError) as exc:
-                    wait_time = base_delay * (2 ** attempt)
-                    log.warning(
-                        "Request failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                        attempt + 1, max_retries, exc, wait_time,
-                    )
-                    if attempt == max_retries - 1:
-                        log.error("Max retries reached at offset %d.", offset)
-                        raise
-                    await asyncio.sleep(wait_time)
-
-            if resp is None or resp.status_code != 200:
-                status = resp.status_code if resp else "no response"
-                log.warning("API error (status=%s) at offset %d", status, offset)
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    log.error("Too many consecutive errors. Stopping.")
-                    stop_reason = "consecutive_errors"
-                    break
-                await asyncio.sleep(10)
-                continue
-
+        if first_resp is None or first_resp.status_code != 200:
+            status = first_resp.status_code if first_resp else "no response"
+            log.error("First page fetch failed (status=%s). Aborting.", status)
+            stop_reason = "first_page_error"
+        else:
             try:
-                body = resp.json()
+                first_body = first_resp.json()
             except Exception:
-                log.warning("Non-JSON response at offset %d", offset)
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    stop_reason = "non_json_response"
-                    break
-                await asyncio.sleep(10)
-                continue
+                log.error("Non-JSON response on first page. Aborting.")
+                first_body = None
+                stop_reason = "non_json_response"
 
-            consecutive_errors = 0
-            total_records = body.get("recordsTotal", 0)
-            page_data = body.get("data", [])
+            if first_body is not None:
+                total_records = first_body.get("recordsTotal", 0)
+                first_data = first_body.get("data", [])
+                log.info("Total records on server: %d", total_records)
 
-            if not page_data:
-                stop_reason = "no_more_data"
-                log.info("No more records at offset %d", offset)
-                break
+                if not first_data:
+                    stop_reason = "no_more_data"
+                else:
+                    # Process first page
+                    hit_cutoff = False
+                    hit_existing = False
+                    page_new = 0
+                    for rec in first_data:
+                        if is_before_cutoff(rec):
+                            hit_cutoff = True
+                            skipped_old += 1
+                            continue
+                        if incremental and rec.get("id", 0) <= max_existing_id:
+                            exists = conn.execute(
+                                "SELECT 1 FROM import_permits WHERE id = ?", (rec["id"],)
+                            ).fetchone()
+                            if exists:
+                                hit_existing = True
+                                continue
+                        all_records.append(rec)
+                        upsert_record(conn, rec)
+                        page_new += 1
 
-            # Process records, applying cutoff and dedup logic
-            hit_cutoff = False
-            hit_existing = False
-            page_new = 0
+                    new_records += page_new
+                    conn.commit()
+                    log.info("Page: %d new, %d total new (this run). offset=0", page_new, new_records)
 
-            for rec in page_data:
-                # Date cutoff: stop if record is before 2023
-                if is_before_cutoff(rec):
-                    hit_cutoff = True
-                    skipped_old += 1
-                    continue
+                    if hit_cutoff:
+                        stop_reason = "date_cutoff"
+                        log.info("Hit date cutoff (%s). Stopping.", DATE_CUTOFF)
+                    elif hit_existing and page_new == 0:
+                        stop_reason = "all_existing"
+                        log.info("All records in first page already exist. Stopping.")
+                    else:
+                        # -- Fetch remaining pages concurrently in batches --
+                        remaining_offsets = list(range(PAGE_SIZE, total_records, PAGE_SIZE))
+                        log.info(
+                            "Fetching %d remaining pages in batches of %d...",
+                            len(remaining_offsets), CONCURRENCY_PAGES,
+                        )
 
-                # Incremental: stop if we've already seen this record
-                if incremental and rec.get("id", 0) <= max_existing_id:
-                    # Check if it actually exists in DB
-                    exists = conn.execute(
-                        "SELECT 1 FROM import_permits WHERE id = ?", (rec["id"],)
-                    ).fetchone()
-                    if exists:
-                        hit_existing = True
-                        continue
+                        for batch_start in range(0, len(remaining_offsets), CONCURRENCY_PAGES):
+                            batch_offsets = remaining_offsets[batch_start:batch_start + CONCURRENCY_PAGES]
+                            tasks = [
+                                fetch_page(client, off, headers, user_id, semaphore)
+                                for off in batch_offsets
+                            ]
+                            results = await asyncio.gather(*tasks)
 
-                all_records.append(rec)
-                upsert_record(conn, rec)
-                page_new += 1
+                            # Sort by offset to process in order
+                            results.sort(key=lambda r: r[0])
 
-            new_records += page_new
-            conn.commit()
+                            batch_stop = False
+                            for off, resp in results:
+                                if resp is None or resp.status_code != 200:
+                                    status = resp.status_code if resp else "no response"
+                                    log.warning("API error (status=%s) at offset %d", status, off)
+                                    consecutive_errors += 1
+                                    if consecutive_errors >= max_consecutive_errors:
+                                        log.error("Too many consecutive errors. Stopping.")
+                                        stop_reason = "consecutive_errors"
+                                        batch_stop = True
+                                        break
+                                    continue
 
-            log.info(
-                "Page: %d new, %d total new (this run). offset=%d",
-                page_new, new_records, offset,
-            )
+                                try:
+                                    body = resp.json()
+                                except Exception:
+                                    log.warning("Non-JSON response at offset %d", off)
+                                    consecutive_errors += 1
+                                    if consecutive_errors >= max_consecutive_errors:
+                                        stop_reason = "non_json_response"
+                                        batch_stop = True
+                                        break
+                                    continue
 
-            # Stop conditions
-            if hit_cutoff:
-                stop_reason = "date_cutoff"
-                log.info("Hit date cutoff (%s). Stopping.", DATE_CUTOFF)
-                break
+                                consecutive_errors = 0
+                                page_data = body.get("data", [])
 
-            if hit_existing and page_new == 0:
-                stop_reason = "all_existing"
-                log.info("All records in this page already exist. Stopping.")
-                break
+                                if not page_data:
+                                    stop_reason = "no_more_data"
+                                    log.info("No more records at offset %d", off)
+                                    batch_stop = True
+                                    break
 
-            offset += PAGE_SIZE
+                                hit_cutoff = False
+                                hit_existing = False
+                                page_new = 0
 
-            if total_records and offset >= total_records:
-                stop_reason = "end_of_data"
-                log.info("Reached total records count: %d", total_records)
-                break
+                                for rec in page_data:
+                                    if is_before_cutoff(rec):
+                                        hit_cutoff = True
+                                        skipped_old += 1
+                                        continue
+                                    if incremental and rec.get("id", 0) <= max_existing_id:
+                                        exists = conn.execute(
+                                            "SELECT 1 FROM import_permits WHERE id = ?", (rec["id"],)
+                                        ).fetchone()
+                                        if exists:
+                                            hit_existing = True
+                                            continue
+                                    all_records.append(rec)
+                                    upsert_record(conn, rec)
+                                    page_new += 1
 
-            await asyncio.sleep(base_delay)
+                                new_records += page_new
+                                conn.commit()
+                                log.info(
+                                    "Page: %d new, %d total new (this run). offset=%d",
+                                    page_new, new_records, off,
+                                )
+
+                                if hit_cutoff:
+                                    stop_reason = "date_cutoff"
+                                    log.info("Hit date cutoff (%s). Stopping.", DATE_CUTOFF)
+                                    batch_stop = True
+                                    break
+                                if hit_existing and page_new == 0:
+                                    stop_reason = "all_existing"
+                                    log.info("All records in this page already exist. Stopping.")
+                                    batch_stop = True
+                                    break
+
+                            if batch_stop:
+                                break
+
+                            await asyncio.sleep(0.5)
+
+                        if stop_reason == "unknown":
+                            stop_reason = "end_of_data"
+                            log.info("Fetched all pages. Total records: %d", total_records)
 
     # Step 4: Save raw JSON for this run
     if all_records:

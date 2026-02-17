@@ -79,8 +79,48 @@ export function PriceVarianceTable({ result }: PriceVarianceTableProps) {
         )}
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {result.data.length === 0 ? (
+          <p className="py-12 text-center text-muted-foreground">No products found.</p>
+        ) : (
+          result.data.map((row) => (
+            <div
+              key={row.slug}
+              className="cursor-pointer rounded-lg border p-3 active:bg-muted/50"
+              onClick={() => router.push(`/products/${row.slug}`)}
+            >
+              <div className="truncate font-medium">
+                {row.generic_name}
+                {row.dosage_strength && (
+                  <span className="ml-1 text-muted-foreground">
+                    {row.dosage_strength}
+                  </span>
+                )}
+              </div>
+              {row.dosage_form && (
+                <div className="truncate text-xs text-muted-foreground">
+                  {row.dosage_form}
+                </div>
+              )}
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {formatNumber(row.order_count)} orders
+                </span>
+                <span className="font-mono font-medium">{row.spread_pct}% spread</span>
+              </div>
+              <div className="mt-1 flex gap-3 text-xs font-mono text-muted-foreground">
+                <span>Min {formatCurrency(row.min_price)}</span>
+                <span>Avg {formatCurrency(row.avg_price)}</span>
+                <span>Max {formatCurrency(row.max_price)}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>

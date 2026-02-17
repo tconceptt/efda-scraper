@@ -51,29 +51,46 @@ export default async function ImportDetailPage({ params }: Props) {
   return (
     <div className="flex flex-col">
       {/* Header */}
-      <div className="border-b bg-background/95 px-4 py-4 lg:px-6">
+      <div className="border-b bg-background/95 px-4 py-5 lg:px-6">
         <div className="flex items-start gap-2 sm:gap-4">
           <MobileNav />
-          <Button variant="ghost" size="icon" asChild className="mt-0.5 shrink-0">
+          <Button variant="ghost" size="icon" asChild className="mt-1 shrink-0">
             <Link href="/imports">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="text-lg font-bold tracking-tight sm:text-xl lg:text-2xl font-mono">
-                {permit.import_permit_number}
-              </h1>
-              <Badge variant={statusColor}>{permit.status}</Badge>
-              <Badge
-                variant={permit.submodule_type_code === "MDCN" ? "default" : "secondary"}
-              >
-                {typeLabel(permit.submodule_type_code)}
-              </Badge>
+          <div className="min-w-0 flex-1 space-y-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <h1 className="text-xl font-bold tracking-tight sm:text-2xl lg:text-3xl font-mono">
+                  {permit.import_permit_number}
+                </h1>
+                <Badge variant={statusColor}>{permit.status}</Badge>
+                <Badge
+                  variant={permit.submodule_type_code === "MDCN" ? "default" : "secondary"}
+                >
+                  {typeLabel(permit.submodule_type_code)}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {permit.agent_name} &mdash; {formatDate(permit.requested_date)}
+              </p>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {permit.agent_name} &mdash; {formatDate(permit.requested_date)}
-            </p>
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <DollarSign className="h-3.5 w-3.5" />
+                <span className="font-semibold text-foreground text-base">{formatCurrency(permit.amount)}</span>
+                <span>{permit.currency ?? "USD"}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <ShippingIcon className="h-3.5 w-3.5" />
+                {shortPort(permit.port_of_entry)}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Package className="h-3.5 w-3.5" />
+                {products.length} product{products.length !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -85,17 +102,20 @@ export default async function ImportDetailPage({ params }: Props) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Building className="h-4 w-4" /> Parties
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                  <Building className="h-3.5 w-3.5" />
+                </span>
+                Parties
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div>
-                <p className="text-muted-foreground text-xs">Agent / Importer</p>
+                <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Agent / Importer</p>
                 <p className="font-medium">{permit.agent_name}</p>
               </div>
               <Separator />
               <div>
-                <p className="text-muted-foreground text-xs">Supplier</p>
+                <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Supplier</p>
                 <p className="font-medium">{permit.supplier_name}</p>
               </div>
             </CardContent>
@@ -105,12 +125,15 @@ export default async function ImportDetailPage({ params }: Props) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <ShippingIcon className="h-4 w-4" /> Shipment
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                  <ShippingIcon className="h-3.5 w-3.5" />
+                </span>
+                Shipment
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div>
-                <p className="text-muted-foreground text-xs">Port of Entry</p>
+                <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Port of Entry</p>
                 <p className="font-medium flex items-center gap-1">
                   <MapPin className="h-3 w-3" />
                   {shortPort(permit.port_of_entry)}
@@ -119,11 +142,11 @@ export default async function ImportDetailPage({ params }: Props) {
               <Separator />
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs">Shipping Method</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Shipping Method</p>
                   <p className="font-medium">{permit.shipping_method ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Delivery</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Delivery</p>
                   <p className="font-medium">{permit.delivery ?? "—"}</p>
                 </div>
               </div>
@@ -131,20 +154,23 @@ export default async function ImportDetailPage({ params }: Props) {
           </Card>
 
           {/* Financial */}
-          <Card>
+          <Card className="border-l-2 border-l-primary">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <DollarSign className="h-4 w-4" /> Financial
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10">
+                  <DollarSign className="h-3.5 w-3.5 text-primary" />
+                </span>
+                Financial
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs">Total Amount</p>
-                  <p className="font-bold text-lg">{formatCurrency(permit.amount)}</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Total Amount</p>
+                  <p className="font-bold text-xl tabular-nums">{formatCurrency(permit.amount)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Freight Cost</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Freight Cost</p>
                   <p className="font-medium">
                     {permit.freight_cost ? formatCurrency(permit.freight_cost) : "—"}
                   </p>
@@ -153,11 +179,11 @@ export default async function ImportDetailPage({ params }: Props) {
               <Separator />
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs">Currency</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Currency</p>
                   <p className="font-medium">{permit.currency ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Payment Mode</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Payment Mode</p>
                   <p className="font-medium">{permit.payment_mode ?? "—"}</p>
                 </div>
               </div>
@@ -168,25 +194,28 @@ export default async function ImportDetailPage({ params }: Props) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <Calendar className="h-4 w-4" /> Dates
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                  <Calendar className="h-3.5 w-3.5" />
+                </span>
+                Dates
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs">Requested</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Requested</p>
                   <p className="font-medium">{formatDate(permit.requested_date)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Submission</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Submission</p>
                   <p className="font-medium">{formatDate(permit.submission_date)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Decision</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Decision</p>
                   <p className="font-medium">{formatDate(permit.decision_date)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Expiry</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Expiry</p>
                   <p className="font-medium">{formatDate(permit.expiry_date)}</p>
                 </div>
               </div>
@@ -197,17 +226,20 @@ export default async function ImportDetailPage({ params }: Props) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                <FileText className="h-4 w-4" /> Reference
+                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                  <FileText className="h-3.5 w-3.5" />
+                </span>
+                Reference
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs">Application ID</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Application ID</p>
                   <p className="font-mono text-xs">{permit.application_id ?? "—"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Proforma Invoice</p>
+                  <p className="text-muted-foreground text-[11px] uppercase tracking-wider">Proforma Invoice</p>
                   <p className="font-mono text-xs">
                     {permit.performa_invoice_number ?? "—"}
                   </p>
@@ -221,7 +253,10 @@ export default async function ImportDetailPage({ params }: Props) {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                  <CreditCard className="h-4 w-4" /> Remark
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-muted">
+                    <CreditCard className="h-3.5 w-3.5" />
+                  </span>
+                  Remark
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm">
@@ -233,10 +268,15 @@ export default async function ImportDetailPage({ params }: Props) {
 
         {/* Products */}
         <div>
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Products ({products.length})
-          </h2>
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-muted">
+              <Package className="h-4 w-4" />
+            </span>
+            <h2 className="text-lg font-semibold">Products</h2>
+            <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground tabular-nums">
+              {products.length}
+            </span>
+          </div>
 
           {products.length === 0 ? (
             <Card>

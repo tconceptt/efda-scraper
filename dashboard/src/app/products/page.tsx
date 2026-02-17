@@ -11,6 +11,8 @@ interface Props {
     sort?: string;
     dir?: string;
     type?: string;
+    dateFrom?: string;
+    dateTo?: string;
   }>;
 }
 
@@ -23,7 +25,7 @@ export default async function ProductsPage({ searchParams }: Props) {
   const result = await getAggregatedProducts(
     page,
     25,
-    { search: params.search, type: params.type },
+    { search: params.search, type: params.type, dateFrom: params.dateFrom, dateTo: params.dateTo },
     sortBy,
     sortDir
   );

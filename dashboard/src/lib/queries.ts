@@ -135,6 +135,8 @@ export interface ImportFilters {
 export interface ProductFilters {
   search?: string;
   type?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 // ─── Generic Product Grouping ──────────────────────────────────────────────
@@ -526,6 +528,14 @@ export async function getAggregatedProducts(
     conditions.push(`i.submodule_type_code = ?`);
     params.push(filters.type);
   }
+  if (filters.dateFrom) {
+    conditions.push(`i.requested_date >= ?`);
+    params.push(filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    conditions.push(`i.requested_date <= ?`);
+    params.push(filters.dateTo);
+  }
 
   const where = `WHERE ${conditions.join(" AND ")}`;
 
@@ -838,6 +848,7 @@ export async function getProductOrderHistoryBySlug(
 // ─── Analytics: Product Intelligence ─────────────────────────────────────────
 
 export interface ProductPriceSpread {
+  slug: string;
   generic_name: string;
   dosage_form: string | null;
   dosage_strength: string | null;
@@ -849,10 +860,13 @@ export interface ProductPriceSpread {
 }
 
 /** Top products with the widest price variation — biggest negotiation opportunities */
-export async function getTopProductPriceSpreads(limit = 15): Promise<ProductPriceSpread[]> {
+export async function getTopProductPriceSpreads(limit = 15, type?: string): Promise<ProductPriceSpread[]> {
   const GROUP_KEY = await getGroupKeySql();
   const { genericName, dosageForm } = await getNormSelectFragments();
-  const rows = await queryAll<Omit<ProductPriceSpread, "spread_pct">>(
+  const join = type ? `JOIN import_permits i ON p.import_permit_id = i.id` : "";
+  const typeFilter = type ? `AND i.submodule_type_code = ?` : "";
+  const params: (string | number)[] = type ? [type, limit] : [limit];
+  const rows = await queryAll<Omit<ProductPriceSpread, "spread_pct" | "slug">>(
     `SELECT
       ${genericName} as generic_name,
       ${dosageForm} as dosage_form,
@@ -862,17 +876,40 @@ export async function getTopProductPriceSpreads(limit = 15): Promise<ProductPric
       MIN(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as min_price,
       MAX(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as max_price
     FROM import_permit_products p
+    ${join}
     WHERE p.generic_name IS NOT NULL AND p.generic_name != '' AND p.unit_price > 0
+      ${typeFilter}
     GROUP BY ${GROUP_KEY}
     HAVING order_count >= 5 AND min_price < max_price
     ORDER BY (max_price - min_price) * 1.0 / avg_price DESC
     LIMIT ?`,
-    [limit]
+    params
   );
   return rows.map((r) => ({
     ...r,
+    slug: makeProductSlug(r.generic_name, r.dosage_form, r.dosage_strength),
     spread_pct: Math.round(((r.max_price - r.min_price) / r.avg_price) * 100),
   }));
+}
+
+/** Paginated price spreads — capped at 100 results total */
+export async function getPaginatedPriceSpreads(
+  page = 1,
+  pageSize = 25,
+  type?: string
+): Promise<PaginatedResult<ProductPriceSpread>> {
+  const MAX_RESULTS = 100;
+  const all = await getTopProductPriceSpreads(MAX_RESULTS, type);
+  const total = all.length;
+  const offset = (page - 1) * pageSize;
+  const data = all.slice(offset, offset + pageSize);
+  return {
+    data,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
 }
 
 export interface ProductGrowth {

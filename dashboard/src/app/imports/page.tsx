@@ -10,6 +10,8 @@ interface Props {
     search?: string;
     type?: string;
     port?: string;
+    dateFrom?: string;
+    dateTo?: string;
     sort?: string;
     dir?: string;
   }>;
@@ -26,6 +28,8 @@ export default async function ImportsPage({ searchParams }: Props) {
       search: params.search,
       type: params.type,
       port: params.port,
+      dateFrom: params.dateFrom,
+      dateTo: params.dateTo,
     }, sortBy, sortDir),
     getPorts(),
   ]);

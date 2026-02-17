@@ -1,25 +1,15 @@
-"use client";
-
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { ProductPriceSpread } from "@/lib/queries";
-import { formatCurrency } from "@/lib/format";
-
-function productLabel(r: ProductPriceSpread): string {
-  const parts = [r.generic_name];
-  if (r.dosage_strength) parts.push(r.dosage_strength);
-  if (r.dosage_form) parts.push(r.dosage_form.toLowerCase());
-  const label = parts.join(" ");
-  return label.length > 35 ? label.slice(0, 32) + "..." : label;
-}
+import { formatCurrency, formatNumber } from "@/lib/format";
 
 export function PriceSpread({ data }: { data: ProductPriceSpread[] }) {
   if (data.length === 0) {
@@ -29,7 +19,7 @@ export function PriceSpread({ data }: { data: ProductPriceSpread[] }) {
           <CardTitle className="text-base">Price Variation by Product</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-[350px] items-center justify-center text-muted-foreground">
+          <div className="flex h-[200px] items-center justify-center text-muted-foreground">
             Not enough data yet.
           </div>
         </CardContent>
@@ -37,71 +27,72 @@ export function PriceSpread({ data }: { data: ProductPriceSpread[] }) {
     );
   }
 
-  const chartData = data.map((d) => ({
-    ...d,
-    label: productLabel(d),
-    fullLabel: `${d.generic_name} ${d.dosage_strength ?? ""} ${d.dosage_form ?? ""}`.trim(),
-  }));
-
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Price Variation by Product — Negotiation Opportunities
+          Price Variation — Negotiation Opportunities
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Products with the widest price spreads across import orders. Higher spread = more room to negotiate.
+          Products with the widest price spreads across import orders.
         </p>
       </CardHeader>
-      <CardContent>
-        <div style={{ height: Math.max(350, data.length * 32 + 40) }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis
-                type="number"
-                tickFormatter={(v) => `${v}%`}
-                tick={{ fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                dataKey="label"
-                type="category"
-                width={200}
-                className="text-xs"
-                tick={{ fill: "var(--muted-foreground)" }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                formatter={(value, _name, props) => {
-                  const d = props.payload;
-                  return [
-                    `${value}% spread`,
-                    `Min ${formatCurrency(d.min_price)} / Avg ${formatCurrency(d.avg_price)} / Max ${formatCurrency(d.max_price)}`,
-                  ];
-                }}
-                labelFormatter={(_, payload) =>
-                  payload?.[0]?.payload?.fullLabel ?? ""
-                }
-                contentStyle={{
-                  backgroundColor: "var(--popover)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  color: "var(--popover-foreground)",
-                }}
-                labelStyle={{ color: "var(--popover-foreground)" }}
-                itemStyle={{ color: "var(--popover-foreground)" }}
-              />
-              <Bar
-                dataKey="spread_pct"
-                name="Price Spread"
-                fill="var(--chart-4)"
-                radius={[0, 4, 4, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
+      <CardContent className="px-0 pb-3">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead className="text-right">Orders</TableHead>
+              <TableHead className="text-right">Min</TableHead>
+              <TableHead className="text-right">Avg</TableHead>
+              <TableHead className="text-right">Max</TableHead>
+              <TableHead className="text-right">Spread</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((row) => (
+              <TableRow key={row.slug}>
+                <TableCell className="max-w-[200px]">
+                  <div className="truncate text-sm font-medium">
+                    {row.generic_name}
+                    {row.dosage_strength && (
+                      <span className="ml-1 text-muted-foreground">
+                        {row.dosage_strength}
+                      </span>
+                    )}
+                  </div>
+                  {row.dosage_form && (
+                    <div className="truncate text-xs text-muted-foreground">
+                      {row.dosage_form}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
+                  {formatNumber(row.order_count)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
+                  {formatCurrency(row.min_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
+                  {formatCurrency(row.avg_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
+                  {formatCurrency(row.max_price)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm font-medium">
+                  {row.spread_pct}%
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div className="mt-3 px-6">
+          <Link
+            href="/analytics/price-variance"
+            className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            View all →
+          </Link>
         </div>
       </CardContent>
     </Card>

@@ -32,7 +32,7 @@ export default async function AnalyticsPage() {
     getTopAgents(20),
     getTopManufacturers(10),
     getAvgOrderValueTrend(),
-    getTopProductPriceSpreads(15),
+    getTopProductPriceSpreads(5),
     getProductVolumeGrowth(15),
     getDosageFormMarketShare(),
   ]);

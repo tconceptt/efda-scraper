@@ -17,6 +17,7 @@ import asyncio
 import csv
 import json
 import logging
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -37,9 +38,11 @@ CSV_PATH = DATA_DIR / "import_products.csv"
 
 API_BASE = "https://api.eris.efda.gov.et"
 PORTAL_URL = "https://portal.eris.efda.gov.et/"
+TOKEN_PATH = DATA_DIR / "state" / "token.json"
+TOKEN_MAX_AGE_SEC = 20 * 60  # 20 minutes
 
 
-async def get_bearer_token() -> str:
+async def _login_for_token() -> str:
     """Login via Playwright and capture the Bearer token."""
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
@@ -60,8 +63,8 @@ async def get_bearer_token() -> str:
         await page.wait_for_selector(
             "input#username, input[name='username']", state="visible", timeout=30_000
         )
-        await page.fill("input#username", "Rufica")
-        await page.fill("input#password", "Rufpar@et#16")
+        await page.fill("input#username", os.environ["EFDA_USERNAME"])
+        await page.fill("input#password", os.environ["EFDA_PASSWORD"])
         await page.click('button:has-text("Login")')
         await page.wait_for_load_state("networkidle", timeout=30_000)
         await page.wait_for_timeout(2000)
@@ -80,6 +83,22 @@ async def get_bearer_token() -> str:
 
     log.info("Got Bearer token (len=%d)", len(token_holder["token"]))
     return token_holder["token"]
+
+
+async def get_bearer_token() -> str:
+    """Load saved token from scrape_all.py if fresh, otherwise do a fresh login."""
+    if TOKEN_PATH.exists():
+        try:
+            saved = json.loads(TOKEN_PATH.read_text())
+            saved_at = time.mktime(time.strptime(saved["saved_at"], "%Y-%m-%dT%H:%M:%S"))
+            age = time.time() - saved_at
+            if age < TOKEN_MAX_AGE_SEC:
+                log.info("Reusing saved token (age=%.0fs)", age)
+                return saved["token"]
+            log.info("Saved token expired (age=%.0fs). Doing fresh login.", age)
+        except Exception as exc:
+            log.warning("Could not load saved token: %s", exc)
+    return await _login_for_token()
 
 
 def init_products_table(conn: sqlite3.Connection):
@@ -276,6 +295,7 @@ async def scrape_products(limit: int | None = None):
     errors = 0
     max_consecutive_errors = 5
     consecutive_errors = 0
+    retried_auth = False
 
     transport = httpx.AsyncHTTPTransport(retries=3)
     async with httpx.AsyncClient(timeout=120.0, transport=transport) as client:
@@ -293,6 +313,21 @@ async def scrape_products(limit: int | None = None):
                     if attempt == 2:
                         raise
                     await asyncio.sleep(2 * (attempt + 1))
+
+            # 401 retry: token may have expired — re-login once
+            if resp.status_code == 401 and not retried_auth:
+                log.warning("Got 401 — saved token expired. Doing fresh login...")
+                bearer_token = await _login_for_token()
+                headers["Authorization"] = bearer_token
+                retried_auth = True
+                # Retry this import
+                try:
+                    resp = await client.get(
+                        f"{API_BASE}/api/ImportPermit/{import_id}",
+                        headers=headers,
+                    )
+                except (httpx.RemoteProtocolError, httpx.ReadTimeout, httpx.ConnectError):
+                    pass
 
             if resp.status_code != 200:
                 log.warning("HTTP %d for import %d (%s)", resp.status_code, import_id, import_number)

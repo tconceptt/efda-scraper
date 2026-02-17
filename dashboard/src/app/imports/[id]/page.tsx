@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { MobileNav } from "@/components/layout/sidebar";
 import { ImportProductsTable } from "@/components/tables/import-products-table";
 import { getImportById, getImportProducts, makeProductSlug } from "@/lib/queries";
 import { formatCurrency, formatDate, typeLabel, shortPort } from "@/lib/format";
@@ -51,15 +52,16 @@ export default async function ImportDetailPage({ params }: Props) {
     <div className="flex flex-col">
       {/* Header */}
       <div className="border-b bg-background/95 px-4 py-4 lg:px-6">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-2 sm:gap-4">
+          <MobileNav />
           <Button variant="ghost" size="icon" asChild className="mt-0.5 shrink-0">
             <Link href="/imports">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-bold tracking-tight lg:text-2xl font-mono">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h1 className="text-lg font-bold tracking-tight sm:text-xl lg:text-2xl font-mono">
                 {permit.import_permit_number}
               </h1>
               <Badge variant={statusColor}>{permit.status}</Badge>

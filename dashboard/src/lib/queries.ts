@@ -212,6 +212,14 @@ export interface ProductMonthlyVolume {
   order_count: number;
 }
 
+export interface ProductMonthlySupplier {
+  month: string;
+  supplier_name: string;
+  avg_price: number;
+  quantity: number;
+  order_count: number;
+}
+
 export interface ProductSupplierPrice {
   supplier_name: string;
   avg_price: number;
@@ -721,6 +729,25 @@ export async function getProductTopImportersBySlug(slug: string, limit = 10): Pr
     ORDER BY total_spend DESC
     LIMIT ?`,
     [groupKey, limit]
+  );
+}
+
+export async function getProductMonthlySupplierBySlug(slug: string): Promise<ProductMonthlySupplier[]> {
+  const groupKey = decodeProductSlug(slug);
+  return queryAll<ProductMonthlySupplier>(
+    `SELECT
+      strftime('%Y-%m', i.requested_date) as month,
+      i.supplier_name,
+      AVG(p.unit_price) as avg_price,
+      COALESCE(SUM(p.quantity), 0) as quantity,
+      COUNT(*) as order_count
+    FROM import_permit_products p
+    JOIN import_permits i ON p.import_permit_id = i.id
+    WHERE ${GROUP_KEY_SQL} = ? AND i.requested_date IS NOT NULL
+      AND i.supplier_name IS NOT NULL AND i.supplier_name != ''
+    GROUP BY month, i.supplier_name
+    ORDER BY month`,
+    [groupKey]
   );
 }
 

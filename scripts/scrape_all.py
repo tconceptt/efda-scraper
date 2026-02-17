@@ -18,6 +18,7 @@ import asyncio
 import csv
 import json
 import logging
+import os
 import sqlite3
 import time
 from pathlib import Path
@@ -36,6 +37,8 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "efda.sqlite3"
 CSV_PATH = DATA_DIR / "all_imports.csv"
 RAW_DIR = DATA_DIR / "raw" / "api_v2"
+STATE_DIR = DATA_DIR / "state"
+TOKEN_PATH = STATE_DIR / "token.json"
 
 API_BASE = "https://api.eris.efda.gov.et"
 PORTAL_URL = "https://portal.eris.efda.gov.et/"
@@ -69,8 +72,8 @@ async def get_bearer_token() -> tuple[str, str]:
         await page.wait_for_selector(
             "input#username, input[name='username']", state="visible", timeout=30_000
         )
-        await page.fill("input#username", "Rufica")
-        await page.fill("input#password", "Rufpar@et#16")
+        await page.fill("input#username", os.environ["EFDA_USERNAME"])
+        await page.fill("input#password", os.environ["EFDA_PASSWORD"])
         await page.click('button:has-text("Login")')
         await page.wait_for_load_state("networkidle", timeout=30_000)
 
@@ -216,9 +219,17 @@ def is_before_cutoff(rec: dict) -> bool:
 
 async def scrape_all(full: bool = False):
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Get auth token
     bearer_token, user_id = await get_bearer_token()
+
+    # Save token for reuse by scrape_products.py
+    TOKEN_PATH.write_text(json.dumps({
+        "token": bearer_token,
+        "user_id": user_id,
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }))
 
     # Step 2: Init DB
     conn = init_db(DB_PATH)

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Package, ShoppingCart, DollarSign, TrendingUp, TrendingDown, Users, Tag, Building } from "lucide-react";
+import { MobileNav } from "@/components/layout/sidebar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,15 +9,15 @@ import {
   getProductBySlug,
   getProductStatsBySlug,
   getProductPriceTrendBySlug,
-  getProductMonthlyVolumeBySlug,
+  getProductMonthlySupplierBySlug,
   getProductSupplierPricesBySlug,
   getProductTopImportersBySlug,
   getProductOrderHistoryBySlug,
 } from "@/lib/queries";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import { PriceOverTime } from "@/components/charts/price-over-time";
+import { MonthlySupplierChart } from "@/components/charts/monthly-supplier-chart";
 import { SupplierPricesTable } from "@/components/tables/supplier-prices-table";
-import { MonthlyVolumeTable } from "@/components/tables/monthly-volume-table";
 import { TopImportersTable } from "@/components/tables/top-importers-table";
 import { ProductOrderHistory } from "@/components/tables/product-order-history";
 
@@ -35,11 +36,11 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
   if (!product) notFound();
 
   const orderHistoryPage = Math.max(1, parseInt(historyPage ?? "1", 10) || 1);
-  const [stats, priceTrend, monthlyVolume, supplierPrices, topImporters, orderHistory] =
+  const [stats, priceTrend, monthlySupplier, supplierPrices, topImporters, orderHistory] =
     await Promise.all([
       getProductStatsBySlug(slug),
       getProductPriceTrendBySlug(slug),
-      getProductMonthlyVolumeBySlug(slug),
+      getProductMonthlySupplierBySlug(slug),
       getProductSupplierPricesBySlug(slug),
       getProductTopImportersBySlug(slug, 10),
       getProductOrderHistoryBySlug(slug, orderHistoryPage, 15),
@@ -53,7 +54,8 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
     <div className="flex flex-col">
       {/* Header */}
       <div className="border-b bg-background/95 px-4 py-4 lg:px-6">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-2 sm:gap-4">
+          <MobileNav />
           <Button variant="ghost" size="icon" asChild className="mt-0.5 shrink-0">
             <Link href="/products">
               <ArrowLeft className="h-4 w-4" />
@@ -87,7 +89,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
 
       <div className="p-4 lg:p-6 space-y-6">
         {/* KPI Cards */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-2">
@@ -130,7 +132,7 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
                 <TrendingDown className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Price Range</span>
               </div>
-              <p className="mt-2 text-lg font-bold">
+              <p className="mt-2 text-sm font-bold sm:text-lg">
                 {stats.minUnitPrice > 0
                   ? `${formatCurrency(stats.minUnitPrice)} – ${formatCurrency(stats.maxUnitPrice)}`
                   : "\u2014"}
@@ -169,11 +171,11 @@ export default async function ProductDetailPage({ params, searchParams }: Props)
         {/* Price Over Time — full width */}
         <PriceOverTime data={priceTrend} />
 
-        {/* Supplier Comparison + Monthly Volume — side by side */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          <SupplierPricesTable data={supplierPrices} />
-          <MonthlyVolumeTable data={monthlyVolume} />
-        </div>
+        {/* Monthly Volume by Supplier — full width */}
+        <MonthlySupplierChart data={monthlySupplier} />
+
+        {/* Supplier Comparison */}
+        <SupplierPricesTable data={supplierPrices} />
 
         {/* Top Importers */}
         <TopImportersTable data={topImporters} />

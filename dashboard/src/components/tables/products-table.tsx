@@ -105,7 +105,7 @@ export function ProductsTable({ result }: ProductsTableProps) {
           value={searchParams.get("type") ?? "all"}
           onValueChange={(v) => updateParams({ type: v === "all" ? null : v })}
         >
-          <SelectTrigger className="w-[170px]">
+          <SelectTrigger className="w-full sm:w-[170px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -228,7 +228,7 @@ export function ProductsTable({ result }: ProductsTableProps) {
 
       {/* Pagination */}
       {result.total > 0 && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Showing {(result.page - 1) * result.pageSize + 1}–
             {Math.min(result.page * result.pageSize, result.total)} of{" "}

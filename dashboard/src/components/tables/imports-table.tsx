@@ -108,7 +108,7 @@ export function ImportsTable({ result, ports }: ImportsTableProps) {
           value={searchParams.get("type") ?? "all"}
           onValueChange={(v) => updateParams({ type: v === "all" ? null : v })}
         >
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-full sm:w-[160px]">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
           <SelectContent>
@@ -121,7 +121,7 @@ export function ImportsTable({ result, ports }: ImportsTableProps) {
           value={searchParams.get("port") ?? "all"}
           onValueChange={(v) => updateParams({ port: v === "all" ? null : v })}
         >
-          <SelectTrigger className="w-[200px]">
+          <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue placeholder="Port" />
           </SelectTrigger>
           <SelectContent>
@@ -226,7 +226,7 @@ export function ImportsTable({ result, ports }: ImportsTableProps) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Showing {(result.page - 1) * result.pageSize + 1}–
           {Math.min(result.page * result.pageSize, result.total)} of{" "}

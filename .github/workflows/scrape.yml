@@ -66,10 +66,21 @@ jobs:
           path: |
             data/efda.sqlite3
             data/state/last_sync.json
-          key: scrape-db-v1
+          key: scrape-db-${{ github.run_id }}
+          restore-keys: scrape-db-
 
       - name: Run scraper pipeline
         run: bash scripts/run_pipeline.sh
+
+      - name: Delete previous database cache
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --key scrape-db- --json id,key -q '.[].key' | while read key; do
+            gh cache delete "$key" || true
+          done
 
       - name: Save database cache
         uses: actions/cache/save@v4
@@ -78,4 +89,4 @@ jobs:
           path: |
             data/efda.sqlite3
             data/state/last_sync.json
-          key: scrape-db-v1
+          key: scrape-db-${{ github.run_id }}

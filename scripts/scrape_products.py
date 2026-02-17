@@ -83,7 +83,7 @@ async def get_bearer_token() -> str:
 
 
 def init_products_table(conn: sqlite3.Connection):
-    """Create the import_permit_products table."""
+    """Create the import_permit_products table and add any missing columns."""
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS import_permit_products (
@@ -108,6 +108,10 @@ def init_products_table(conn: sqlite3.Connection):
             discount REAL,
             amount REAL,
             is_accessory INTEGER,
+            full_item_name TEXT,
+            dosage_form TEXT,
+            dosage_strength TEXT,
+            dosage_unit TEXT,
             raw_json TEXT,
             scraped_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (import_permit_id) REFERENCES import_permits(id)
@@ -120,7 +124,44 @@ def init_products_table(conn: sqlite3.Connection):
         ON import_permit_products(import_permit_id)
         """
     )
+    # Add columns to existing table (idempotent)
+    for col in ["full_item_name TEXT", "dosage_form TEXT", "dosage_strength TEXT", "dosage_unit TEXT"]:
+        try:
+            conn.execute(f"ALTER TABLE import_permit_products ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
+
+
+def backfill_from_raw_json(conn: sqlite3.Connection):
+    """Backfill full_item_name and dosage fields from stored raw_json."""
+    rows = conn.execute(
+        "SELECT id, raw_json FROM import_permit_products "
+        "WHERE full_item_name IS NULL AND raw_json IS NOT NULL"
+    ).fetchall()
+    if not rows:
+        return
+    log.info("Backfilling %d products from raw_json...", len(rows))
+    for row_id, raw in rows:
+        try:
+            item = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        product = item.get("product") or {}
+        conn.execute(
+            """UPDATE import_permit_products
+            SET full_item_name = ?, dosage_form = ?, dosage_strength = ?, dosage_unit = ?
+            WHERE id = ?""",
+            (
+                product.get("fullItemName"),
+                product.get("dosageForm") or product.get("dosageFormStr"),
+                product.get("dosageStrength") or product.get("dosageStrengthStr"),
+                product.get("dosageUnit") or product.get("dosageUnitName"),
+                row_id,
+            ),
+        )
+    conn.commit()
+    log.info("Backfill complete.")
 
 
 def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: str):
@@ -138,9 +179,10 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             product_registration_date, product_expiry_date, product_status,
             manufacturer_name, manufacturer_site, manufacturer_country_id,
             quantity, unit_price, discount, amount,
-            is_accessory, raw_json, scraped_at
+            is_accessory, full_item_name, dosage_form, dosage_strength, dosage_unit,
+            raw_json, scraped_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
         )
         ON CONFLICT(id) DO UPDATE SET
             product_name = excluded.product_name,
@@ -149,6 +191,10 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             quantity = excluded.quantity,
             unit_price = excluded.unit_price,
             amount = excluded.amount,
+            full_item_name = excluded.full_item_name,
+            dosage_form = excluded.dosage_form,
+            dosage_strength = excluded.dosage_strength,
+            dosage_unit = excluded.dosage_unit,
             raw_json = excluded.raw_json,
             scraped_at = excluded.scraped_at
         """,
@@ -174,6 +220,10 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             item.get("discount"),
             item.get("amount"),
             item.get("isAccessory"),
+            product.get("fullItemName"),
+            product.get("dosageForm") or product.get("dosageFormStr"),
+            product.get("dosageStrength") or product.get("dosageStrengthStr"),
+            product.get("dosageUnit") or product.get("dosageUnitName"),
             json.dumps(item, default=str),
         ),
     )
@@ -187,6 +237,7 @@ async def scrape_products(limit: int | None = None):
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     init_products_table(conn)
+    backfill_from_raw_json(conn)
 
     # Step 3: Get import IDs to process
     # Skip imports we've already scraped products for
@@ -198,7 +249,8 @@ async def scrape_products(limit: int | None = None):
     }
 
     all_imports = conn.execute(
-        "SELECT id, import_permit_number FROM import_permits ORDER BY id DESC"
+        "SELECT id, import_permit_number FROM import_permits "
+        "WHERE requested_date >= '2023-01-01' ORDER BY id DESC"
     ).fetchall()
 
     to_process = [(pid, pnum) for pid, pnum in all_imports if pid not in already_scraped]
@@ -285,8 +337,9 @@ async def scrape_products(limit: int | None = None):
     log.info("Exporting products to CSV...")
     csv_fields = [
         "id", "import_permit_id", "import_permit_number",
-        "product_name", "generic_name", "brand_name",
+        "product_name", "full_item_name", "generic_name", "brand_name",
         "description", "hs_code",
+        "dosage_form", "dosage_strength", "dosage_unit",
         "product_registration_date", "product_expiry_date", "product_status",
         "manufacturer_name", "manufacturer_site",
         "quantity", "unit_price", "discount", "amount",

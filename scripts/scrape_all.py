@@ -1,19 +1,19 @@
 """
-Scrape all import permit records from the EFDA portal.
+Scrape import permit records from the EFDA portal (2023 onwards).
+
+Modes:
+    Initial:     Fetches from newest → oldest, stops at 2023-01-01 cutoff
+    Incremental: Fetches from newest → stops when hitting already-seen records
 
 Usage:
     cd /Users/t/Developer/personal/efda-scraper
-    .venv/bin/python scripts/scrape_all.py
-
-Flow:
-    1. Login via Playwright to obtain a Bearer token
-    2. Use httpx to paginate POST /api/ImportPermit/List
-    3. For each import, fetch detail with products & suppliers
-    4. Save to SQLite + CSV
+    .venv/bin/python scripts/scrape_all.py              # auto-detects mode
+    .venv/bin/python scripts/scrape_all.py --full        # force full re-scrape (still 2023+ only)
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import csv
 import json
@@ -39,7 +39,8 @@ RAW_DIR = DATA_DIR / "raw" / "api_v2"
 
 API_BASE = "https://api.eris.efda.gov.et"
 PORTAL_URL = "https://portal.eris.efda.gov.et/"
-PAGE_SIZE = 100  # max records per request
+PAGE_SIZE = 100
+DATE_CUTOFF = "2023-01-01"
 
 
 async def get_bearer_token() -> tuple[str, str]:
@@ -55,7 +56,6 @@ async def get_bearer_token() -> tuple[str, str]:
             auth = request.headers.get("authorization", "")
             if auth.startswith("Bearer ") and not token_holder:
                 token_holder["token"] = auth
-                # Extract userId from any API call body if available
                 if request.post_data and "userId" in request.post_data:
                     for line in request.post_data.split("\n"):
                         line = line.strip()
@@ -74,7 +74,6 @@ async def get_bearer_token() -> tuple[str, str]:
         await page.click('button:has-text("Login")')
         await page.wait_for_load_state("networkidle", timeout=30_000)
 
-        # Navigate to import permits to trigger an authenticated API call
         await page.wait_for_timeout(2000)
         try:
             await page.click("text=Import Permit", timeout=5000)
@@ -87,14 +86,14 @@ async def get_bearer_token() -> tuple[str, str]:
     if "token" not in token_holder:
         raise RuntimeError("Failed to capture Bearer token during login")
 
-    user_id = token_holder.get("userId", "29307")  # fallback from captured data
+    user_id = token_holder.get("userId", "29307")
     log.info("Got Bearer token (len=%d), userId=%s", len(token_holder["token"]), user_id)
     return token_holder["token"], user_id
 
 
 def build_form_data(start: int, length: int, user_id: str) -> dict:
     """Build the multipart form fields matching the portal's DataTables request."""
-    fields = {
+    return {
         "start": str(start),
         "length": str(length),
         "search[value]": "",
@@ -116,7 +115,6 @@ def build_form_data(start: int, length: int, user_id: str) -> dict:
         "order[0][column]": "0",
         "order[0][dir]": "desc",
     }
-    return fields
 
 
 def init_db(db_path: Path) -> sqlite3.Connection:
@@ -208,7 +206,15 @@ def upsert_record(conn: sqlite3.Connection, rec: dict):
     )
 
 
-async def scrape_all():
+def is_before_cutoff(rec: dict) -> bool:
+    """Check if a record's requestedDate is before the DATE_CUTOFF."""
+    req_date = rec.get("requestedDate", "")
+    if not req_date:
+        return False
+    return req_date < DATE_CUTOFF
+
+
+async def scrape_all(full: bool = False):
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Get auth token
@@ -224,26 +230,43 @@ async def scrape_all():
     conn.commit()
     run_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-    # Step 3: Paginate through all records
+    # Step 3: Determine mode
+    existing_count = conn.execute(
+        "SELECT COUNT(*) FROM import_permits WHERE requested_date >= ?", (DATE_CUTOFF,)
+    ).fetchone()[0]
+    max_existing_id = conn.execute(
+        "SELECT COALESCE(MAX(id), 0) FROM import_permits"
+    ).fetchone()[0]
+
+    incremental = existing_count > 0 and not full
+    if incremental:
+        log.info(
+            "Incremental mode: %d records in DB (2023+), max id=%d. "
+            "Will stop when hitting existing records.",
+            existing_count, max_existing_id,
+        )
+    else:
+        log.info(
+            "Full mode: scraping all records from newest until %s cutoff.", DATE_CUTOFF
+        )
+
     headers = {
         "Authorization": bearer_token,
         "Accept": "application/json, text/plain, */*",
         "Referer": PORTAL_URL,
     }
 
-    # Resume: check how many records we already have in the DB
-    existing_count = conn.execute("SELECT COUNT(*) FROM import_permits").fetchone()[0]
-    start_offset = (existing_count // PAGE_SIZE) * PAGE_SIZE  # resume from last full page
-    if existing_count > 0:
-        log.info("Resuming: %d records in DB, starting from offset %d", existing_count, start_offset)
-
+    # Always start from offset 0 (newest first)
     all_records: list[dict] = []
-    offset = start_offset
+    offset = 0
     total_records = None
     max_retries = 5
-    base_delay = 2.0  # seconds between requests
+    base_delay = 2.0
     consecutive_errors = 0
     max_consecutive_errors = 3
+    stop_reason = "unknown"
+    new_records = 0
+    skipped_old = 0
 
     transport = httpx.AsyncHTTPTransport(retries=3)
     async with httpx.AsyncClient(timeout=120.0, transport=transport) as client:
@@ -267,16 +290,17 @@ async def scrape_all():
                         attempt + 1, max_retries, exc, wait_time,
                     )
                     if attempt == max_retries - 1:
-                        log.error("Max retries reached at offset %d. Stopping.", offset)
+                        log.error("Max retries reached at offset %d.", offset)
                         raise
                     await asyncio.sleep(wait_time)
 
             if resp is None or resp.status_code != 200:
                 status = resp.status_code if resp else "no response"
-                log.warning("API error (status=%s) at offset %d, waiting 10s and retrying...", status, offset)
+                log.warning("API error (status=%s) at offset %d", status, offset)
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
-                    log.error("Too many consecutive errors (%d). Token may have expired. Stopping.", consecutive_errors)
+                    log.error("Too many consecutive errors. Stopping.")
+                    stop_reason = "consecutive_errors"
                     break
                 await asyncio.sleep(10)
                 continue
@@ -284,9 +308,10 @@ async def scrape_all():
             try:
                 body = resp.json()
             except Exception:
-                log.warning("Non-JSON response at offset %d. Waiting 10s and retrying...", offset)
+                log.warning("Non-JSON response at offset %d", offset)
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
+                    stop_reason = "non_json_response"
                     break
                 await asyncio.sleep(10)
                 continue
@@ -296,30 +321,62 @@ async def scrape_all():
             page_data = body.get("data", [])
 
             if not page_data:
+                stop_reason = "no_more_data"
                 log.info("No more records at offset %d", offset)
                 break
 
+            # Process records, applying cutoff and dedup logic
+            hit_cutoff = False
+            hit_existing = False
+            page_new = 0
+
             for rec in page_data:
+                # Date cutoff: stop if record is before 2023
+                if is_before_cutoff(rec):
+                    hit_cutoff = True
+                    skipped_old += 1
+                    continue
+
+                # Incremental: stop if we've already seen this record
+                if incremental and rec.get("id", 0) <= max_existing_id:
+                    # Check if it actually exists in DB
+                    exists = conn.execute(
+                        "SELECT 1 FROM import_permits WHERE id = ?", (rec["id"],)
+                    ).fetchone()
+                    if exists:
+                        hit_existing = True
+                        continue
+
                 all_records.append(rec)
                 upsert_record(conn, rec)
+                page_new += 1
 
+            new_records += page_new
             conn.commit()
-            total_in_db = existing_count + len(all_records)
+
             log.info(
-                "Fetched %d records (this run: %d, total in DB: ~%d / %d)",
-                len(page_data),
-                len(all_records),
-                total_in_db,
-                total_records or "?",
+                "Page: %d new, %d total new (this run). offset=%d",
+                page_new, new_records, offset,
             )
+
+            # Stop conditions
+            if hit_cutoff:
+                stop_reason = "date_cutoff"
+                log.info("Hit date cutoff (%s). Stopping.", DATE_CUTOFF)
+                break
+
+            if hit_existing and page_new == 0:
+                stop_reason = "all_existing"
+                log.info("All records in this page already exist. Stopping.")
+                break
 
             offset += PAGE_SIZE
 
             if total_records and offset >= total_records:
+                stop_reason = "end_of_data"
                 log.info("Reached total records count: %d", total_records)
                 break
 
-            # Delay between requests to avoid server disconnects
             await asyncio.sleep(base_delay)
 
     # Step 4: Save raw JSON for this run
@@ -328,9 +385,11 @@ async def scrape_all():
         raw_path.write_text(json.dumps(all_records, indent=2, default=str))
         log.info("Saved %d raw records to %s", len(all_records), raw_path)
 
-    # Step 5: Export ALL records from DB to CSV
-    final_count = conn.execute("SELECT COUNT(*) FROM import_permits").fetchone()[0]
-    log.info("Exporting all %d records from DB to CSV...", final_count)
+    # Step 5: Export 2023+ records from DB to CSV
+    final_count = conn.execute(
+        "SELECT COUNT(*) FROM import_permits WHERE requested_date >= ?", (DATE_CUTOFF,)
+    ).fetchone()[0]
+    log.info("Exporting %d records (2023+) from DB to CSV...", final_count)
     csv_fields = [
         "id", "import_permit_number", "application_id", "agent_name",
         "supplier_name", "port_of_entry", "payment_mode", "shipping_method",
@@ -340,7 +399,9 @@ async def scrape_all():
         "delivery", "created_by_username", "assigned_user", "is_accessory", "remark",
     ]
     rows = conn.execute(
-        f"SELECT {', '.join(csv_fields)} FROM import_permits ORDER BY id DESC"
+        f"SELECT {', '.join(csv_fields)} FROM import_permits "
+        f"WHERE requested_date >= ? ORDER BY id DESC",
+        (DATE_CUTOFF,),
     ).fetchall()
     with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -349,6 +410,7 @@ async def scrape_all():
     log.info("Saved CSV with %d records to %s", len(rows), CSV_PATH)
 
     # Step 6: Update scrape log
+    mode = "incremental" if incremental else "full"
     conn.execute(
         """
         UPDATE scrape_log
@@ -359,14 +421,25 @@ async def scrape_all():
             message = ?
         WHERE id = ?
         """,
-        (total_records, len(all_records), f"Scraped {len(all_records)} records", run_id),
+        (
+            final_count,
+            new_records,
+            f"mode={mode} new={new_records} stop={stop_reason} skipped_old={skipped_old}",
+            run_id,
+        ),
     )
     conn.commit()
     conn.close()
 
-    log.info("Done! %d records scraped and saved.", len(all_records))
-    return len(all_records)
+    log.info(
+        "Done! mode=%s, new_records=%d, stop_reason=%s, total_2023+=%d",
+        mode, new_records, stop_reason, final_count,
+    )
+    return new_records
 
 
 if __name__ == "__main__":
-    asyncio.run(scrape_all())
+    parser = argparse.ArgumentParser(description="Scrape EFDA import permits (2023+)")
+    parser.add_argument("--full", action="store_true", help="Force full re-scrape (still 2023+ only)")
+    args = parser.parse_args()
+    asyncio.run(scrape_all(full=args.full))

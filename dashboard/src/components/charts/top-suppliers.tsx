@@ -16,7 +16,7 @@ import { formatCurrency } from "@/lib/format";
 export function TopSuppliers({ data }: { data: SupplierStat[] }) {
   const chartData = data.map((d) => ({
     ...d,
-    name: d.name.length > 25 ? d.name.slice(0, 22) + "..." : d.name,
+    shortName: d.name.length > 20 ? d.name.slice(0, 18) + "\u2026" : d.name,
     fullName: d.name,
   }));
 
@@ -26,23 +26,27 @@ export function TopSuppliers({ data }: { data: SupplierStat[] }) {
         <CardTitle className="text-base">Top 10 Suppliers by Value</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px]">
+        <div className="h-[400px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+            <BarChart
+              data={chartData}
+              layout="vertical"
+              margin={{ left: 0, right: 20, top: 0, bottom: 0 }}
+              barCategoryGap="20%"
+            >
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border" horizontal={false} />
               <XAxis
                 type="number"
                 tickFormatter={(v) => formatCurrency(v, true)}
-                tick={{ fill: "var(--muted-foreground)" }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
-                dataKey="name"
+                dataKey="shortName"
                 type="category"
-                width={150}
-                className="text-xs"
-                tick={{ fill: "var(--muted-foreground)" }}
+                width={160}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
               />
@@ -57,6 +61,8 @@ export function TopSuppliers({ data }: { data: SupplierStat[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar
                 dataKey="value"

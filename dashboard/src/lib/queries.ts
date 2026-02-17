@@ -2,11 +2,13 @@ import { getDb } from "./db";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Execute a query returning all rows, cast to T[] */
+/** Execute a query returning all rows as plain objects, cast to T[] */
 async function queryAll<T>(sql: string, args: unknown[] = []): Promise<T[]> {
   const db = getDb();
   const result = await db.execute({ sql, args: args as never[] });
-  return result.rows as unknown as T[];
+  // libsql returns Row class instances — spread into plain objects
+  // so they can be passed from Server Components to Client Components.
+  return result.rows.map((row) => ({ ...row }) as unknown as T);
 }
 
 /** Execute a query returning the first row, cast to T | null */
@@ -226,6 +228,7 @@ export interface ProductImporterStat {
 
 export interface ProductOrderRow {
   id: number;
+  import_permit_id: number;
   import_permit_number: string;
   requested_date: string;
   agent_name: string;
@@ -737,7 +740,7 @@ export async function getProductOrderHistoryBySlug(
   const offset = (page - 1) * pageSize;
   const data = await queryAll<ProductOrderRow>(
     `SELECT
-      p.id, p.import_permit_number, p.product_name,
+      p.id, p.import_permit_id, p.import_permit_number, p.product_name,
       i.requested_date, i.agent_name, i.supplier_name, i.port_of_entry,
       p.quantity, p.unit_price, p.amount
     FROM import_permit_products p

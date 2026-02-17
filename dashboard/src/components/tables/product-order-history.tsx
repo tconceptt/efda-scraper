@@ -79,7 +79,11 @@ export function ProductOrderHistory({ result }: ProductOrderHistoryProps) {
               </TableRow>
             ) : (
               result.data.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => router.push(`/imports/${row.import_permit_id}`)}
+                >
                   <TableCell className="whitespace-nowrap">
                     {formatDate(row.requested_date)}
                   </TableCell>

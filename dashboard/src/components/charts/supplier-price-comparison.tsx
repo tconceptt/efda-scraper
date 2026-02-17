@@ -86,6 +86,8 @@ export function SupplierPriceComparison({
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar
                 dataKey="avg_price"

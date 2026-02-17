@@ -60,6 +60,8 @@ export function ImportsOverTime({ data }: { data: MonthlyData[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Area
                 type="monotone"

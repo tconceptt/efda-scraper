@@ -59,6 +59,8 @@ export function TopManufacturers({ data }: { data: ManufacturerStat[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar
                 dataKey="count"

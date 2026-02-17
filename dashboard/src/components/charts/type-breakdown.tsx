@@ -48,6 +48,8 @@ export function TypeBreakdown({ data }: { data: TypeStat[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
                 {data.map((_, idx) => (

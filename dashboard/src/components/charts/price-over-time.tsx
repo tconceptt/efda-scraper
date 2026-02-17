@@ -65,6 +65,8 @@ export function PriceOverTime({ data }: { data: ProductPriceTrend[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Legend />
               <Line

@@ -80,6 +80,8 @@ export function TopImporters({ data }: { data: ProductImporterStat[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar
                 dataKey="total_spend"

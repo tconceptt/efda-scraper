@@ -63,6 +63,8 @@ export function MonthlyVolume({ data }: { data: ProductMonthlyVolume[] }) {
                   borderRadius: "var(--radius)",
                   color: "var(--popover-foreground)",
                 }}
+                labelStyle={{ color: "var(--popover-foreground)" }}
+                itemStyle={{ color: "var(--popover-foreground)" }}
               />
               <Bar
                 dataKey="quantity"

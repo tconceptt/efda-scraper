@@ -11,20 +11,12 @@ import {
   Calendar,
   Package,
   CreditCard,
-  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ImportProductsTable } from "@/components/tables/import-products-table";
 import { getImportById, getImportProducts, makeProductSlug } from "@/lib/queries";
 import { formatCurrency, formatDate, typeLabel, shortPort } from "@/lib/format";
 
@@ -251,81 +243,24 @@ export default async function ImportDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Brand</TableHead>
-                    <TableHead>Manufacturer</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Unit Price</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="w-8" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {products.map((p) => {
-                    const slug =
-                      p.generic_name
-                        ? makeProductSlug(p.generic_name, p.dosage_form, p.dosage_strength)
-                        : null;
-
-                    const row = (
-                      <TableRow
-                        key={p.id}
-                        className={slug ? "cursor-pointer hover:bg-muted/50" : ""}
-                      >
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{p.generic_name || p.product_name}</p>
-                            {p.dosage_form && (
-                              <p className="text-xs text-muted-foreground">
-                                {p.dosage_form}
-                                {p.dosage_strength ? ` ${p.dosage_strength}` : ""}
-                                {p.dosage_unit ? ` ${p.dosage_unit}` : ""}
-                              </p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm">{p.brand_name || "—"}</TableCell>
-                        <TableCell className="text-sm max-w-[160px] truncate">
-                          {p.manufacturer_name || "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {p.quantity?.toLocaleString() ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {p.unit_price ? formatCurrency(p.unit_price) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {formatCurrency(p.amount)}
-                        </TableCell>
-                        <TableCell>
-                          {slug && (
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-
-                    if (slug) {
-                      return (
-                        <Link
-                          key={p.id}
-                          href={`/products/${slug}`}
-                          className="contents"
-                        >
-                          {row}
-                        </Link>
-                      );
-                    }
-
-                    return row;
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <ImportProductsTable
+              products={products.map((p) => ({
+                id: p.id,
+                generic_name: p.generic_name,
+                product_name: p.product_name,
+                brand_name: p.brand_name,
+                manufacturer_name: p.manufacturer_name,
+                quantity: p.quantity,
+                unit_price: p.unit_price,
+                amount: p.amount,
+                dosage_form: p.dosage_form,
+                dosage_strength: p.dosage_strength,
+                dosage_unit: p.dosage_unit,
+                slug: p.generic_name
+                  ? makeProductSlug(p.generic_name, p.dosage_form, p.dosage_strength)
+                  : null,
+              }))}
+            />
           )}
         </div>
       </div>

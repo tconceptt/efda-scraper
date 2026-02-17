@@ -28,8 +28,7 @@ export default async function ImportsPage({ searchParams }: Props) {
       search: params.search,
       type: params.type,
       port: params.port,
-      dateFrom: params.dateFrom,
-      dateTo: params.dateTo,
+      ...(params.dateFrom && params.dateTo ? { dateFrom: params.dateFrom, dateTo: params.dateTo } : {}),
     }, sortBy, sortDir),
     getPorts(),
   ]);

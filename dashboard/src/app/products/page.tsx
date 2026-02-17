@@ -25,7 +25,7 @@ export default async function ProductsPage({ searchParams }: Props) {
   const result = await getAggregatedProducts(
     page,
     25,
-    { search: params.search, type: params.type, dateFrom: params.dateFrom, dateTo: params.dateTo },
+    { search: params.search, type: params.type, ...(params.dateFrom && params.dateTo ? { dateFrom: params.dateFrom, dateTo: params.dateTo } : {}) },
     sortBy,
     sortDir
   );

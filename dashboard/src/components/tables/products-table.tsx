@@ -43,6 +43,8 @@ export function ProductsTable({ result }: ProductsTableProps) {
   const [searchInput, setSearchInput] = useState(
     searchParams.get("search") ?? ""
   );
+  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "");
+  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "");
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -114,13 +116,80 @@ export function ProductsTable({ result }: ProductsTableProps) {
             <SelectItem value="MD">Medical Device</SelectItem>
           </SelectContent>
         </Select>
+        <Input
+          type="date"
+          placeholder="From"
+          value={dateFrom}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDateFrom(v);
+            if (v && dateTo) updateParams({ dateFrom: v, dateTo });
+            else if (!v && !dateTo) updateParams({ dateFrom: null, dateTo: null });
+          }}
+          onKeyDown={(e) => e.preventDefault()}
+          className="w-full sm:w-[160px]"
+        />
+        <Input
+          type="date"
+          placeholder="To"
+          value={dateTo}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDateTo(v);
+            if (dateFrom && v) updateParams({ dateFrom, dateTo: v });
+            else if (!dateFrom && !v) updateParams({ dateFrom: null, dateTo: null });
+          }}
+          onKeyDown={(e) => e.preventDefault()}
+          className="w-full sm:w-[160px]"
+        />
         {isPending && (
           <Loader2 className="h-5 w-5 animate-spin self-center text-muted-foreground" />
         )}
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {result.data.length === 0 ? (
+          <p className="py-12 text-center text-muted-foreground">No products found.</p>
+        ) : (
+          result.data.map((row) => (
+            <div
+              key={row.slug}
+              className="cursor-pointer rounded-lg border p-3 active:bg-muted/50"
+              onClick={() => router.push(`/products/${row.slug}`)}
+            >
+              <div className="truncate font-medium">
+                {row.generic_name}
+                {row.dosage_strength && (
+                  <span className="ml-1 text-muted-foreground">
+                    {row.dosage_strength}
+                    {row.dosage_unit ? ` ${row.dosage_unit}` : ""}
+                  </span>
+                )}
+              </div>
+              {row.dosage_form && (
+                <div className="truncate text-xs text-muted-foreground">{row.dosage_form}</div>
+              )}
+              <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
+                <span>{formatNumber(row.order_count)} orders</span>
+                <span>{formatNumber(row.brand_count)} brands</span>
+                <span>{formatNumber(row.supplier_count)} suppliers</span>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  Avg {row.avg_price ? formatCurrency(row.avg_price) : "\u2014"}
+                </span>
+                <span className="font-mono font-medium">
+                  {row.total_value ? formatCurrency(row.total_value) : "\u2014"}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>

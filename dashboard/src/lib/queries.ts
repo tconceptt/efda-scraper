@@ -431,7 +431,7 @@ export async function getImports(
     params.push(filters.dateFrom);
   }
   if (filters.dateTo) {
-    conditions.push(`requested_date <= ?`);
+    conditions.push(`requested_date < date(?, '+1 day')`);
     params.push(filters.dateTo);
   }
 
@@ -533,7 +533,7 @@ export async function getAggregatedProducts(
     params.push(filters.dateFrom);
   }
   if (filters.dateTo) {
-    conditions.push(`i.requested_date <= ?`);
+    conditions.push(`i.requested_date < date(?, '+1 day')`);
     params.push(filters.dateTo);
   }
 

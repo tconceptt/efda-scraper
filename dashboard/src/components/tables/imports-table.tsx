@@ -45,6 +45,8 @@ export function ImportsTable({ result, ports }: ImportsTableProps) {
   const [searchInput, setSearchInput] = useState(
     searchParams.get("search") ?? ""
   );
+  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "");
+  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "");
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -133,11 +135,68 @@ export function ImportsTable({ result, ports }: ImportsTableProps) {
             ))}
           </SelectContent>
         </Select>
+        <Input
+          type="date"
+          placeholder="From"
+          value={dateFrom}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDateFrom(v);
+            if (v && dateTo) updateParams({ dateFrom: v, dateTo });
+            else if (!v && !dateTo) updateParams({ dateFrom: null, dateTo: null });
+          }}
+          onKeyDown={(e) => e.preventDefault()}
+          className="w-full sm:w-[160px]"
+        />
+        <Input
+          type="date"
+          placeholder="To"
+          value={dateTo}
+          onChange={(e) => {
+            const v = e.target.value;
+            setDateTo(v);
+            if (dateFrom && v) updateParams({ dateFrom, dateTo: v });
+            else if (!dateFrom && !v) updateParams({ dateFrom: null, dateTo: null });
+          }}
+          onKeyDown={(e) => e.preventDefault()}
+          className="w-full sm:w-[160px]"
+        />
         {isPending && <Loader2 className="h-5 w-5 animate-spin self-center text-muted-foreground" />}
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border">
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {result.data.length === 0 ? (
+          <p className="py-12 text-center text-muted-foreground">No results found.</p>
+        ) : (
+          result.data.map((row) => (
+            <div
+              key={row.id}
+              className="cursor-pointer rounded-lg border p-3 active:bg-muted/50"
+              onClick={() => router.push(`/imports/${row.id}`)}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-mono text-xs">{row.import_permit_number}</span>
+                <Badge
+                  variant={row.submodule_type_code === "MDCN" ? "default" : "secondary"}
+                  className="shrink-0"
+                >
+                  {typeLabel(row.submodule_type_code)}
+                </Badge>
+              </div>
+              <div className="mt-1.5 truncate text-sm font-medium">{row.agent_name}</div>
+              <div className="truncate text-sm text-muted-foreground">{row.supplier_name}</div>
+              <div className="mt-1.5 flex items-center justify-between text-sm">
+                <span className="font-mono font-medium">{formatCurrency(row.amount)}</span>
+                <span className="text-muted-foreground">{formatDate(row.requested_date)}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>

@@ -73,7 +73,6 @@ export function ValueTrends({ data }: { data: MonthlyByType[] }) {
                 stroke="var(--chart-1)"
                 fill="url(#colorMdcn)"
                 strokeWidth={2}
-                stackId="1"
               />
               <Area
                 type="monotone"
@@ -82,7 +81,6 @@ export function ValueTrends({ data }: { data: MonthlyByType[] }) {
                 stroke="var(--chart-2)"
                 fill="url(#colorMd)"
                 strokeWidth={2}
-                stackId="1"
               />
             </AreaChart>
           </ResponsiveContainer>

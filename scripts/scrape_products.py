@@ -25,6 +25,19 @@ from pathlib import Path
 import httpx
 from playwright.async_api import async_playwright
 
+try:
+    from scripts.normalize import (
+        normalize_dosage_form,
+        normalize_dosage_strength,
+        normalize_generic_name,
+    )
+except ImportError:
+    from normalize import (  # type: ignore[no-redef]
+        normalize_dosage_form,
+        normalize_dosage_strength,
+        normalize_generic_name,
+    )
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -144,7 +157,10 @@ def init_products_table(conn: sqlite3.Connection):
         """
     )
     # Add columns to existing table (idempotent)
-    for col in ["full_item_name TEXT", "dosage_form TEXT", "dosage_strength TEXT", "dosage_unit TEXT"]:
+    for col in [
+        "full_item_name TEXT", "dosage_form TEXT", "dosage_strength TEXT", "dosage_unit TEXT",
+        "norm_generic_name TEXT", "norm_dosage_form TEXT", "norm_dosage_strength TEXT",
+    ]:
         try:
             conn.execute(f"ALTER TABLE import_permit_products ADD COLUMN {col}")
         except sqlite3.OperationalError:
@@ -183,11 +199,41 @@ def backfill_from_raw_json(conn: sqlite3.Connection):
     log.info("Backfill complete.")
 
 
+def backfill_normalized_columns(conn: sqlite3.Connection):
+    """Backfill norm_generic_name / norm_dosage_form / norm_dosage_strength."""
+    rows = conn.execute(
+        "SELECT id, generic_name, dosage_form, dosage_strength "
+        "FROM import_permit_products "
+        "WHERE norm_generic_name IS NULL AND generic_name IS NOT NULL"
+    ).fetchall()
+    if not rows:
+        return
+    log.info("Backfilling normalized columns for %d products...", len(rows))
+    for row_id, generic_name, dosage_form, dosage_strength in rows:
+        conn.execute(
+            """UPDATE import_permit_products
+            SET norm_generic_name = ?, norm_dosage_form = ?, norm_dosage_strength = ?
+            WHERE id = ?""",
+            (
+                normalize_generic_name(generic_name) if generic_name else None,
+                normalize_dosage_form(dosage_form) if dosage_form else None,
+                normalize_dosage_strength(dosage_strength) if dosage_strength else None,
+                row_id,
+            ),
+        )
+    conn.commit()
+    log.info("Normalized column backfill complete.")
+
+
 def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: str):
     """Insert or update a product line item."""
     product = item.get("product") or {}
     mfg_addr = item.get("manufacturerAddress") or {}
     mfg = mfg_addr.get("manufacturer") or {}
+
+    generic_name = product.get("genericName")
+    dosage_form = product.get("dosageForm") or product.get("dosageFormStr")
+    dosage_strength = product.get("dosageStrength") or product.get("dosageStrengthStr")
 
     conn.execute(
         """
@@ -199,9 +245,10 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             manufacturer_name, manufacturer_site, manufacturer_country_id,
             quantity, unit_price, discount, amount,
             is_accessory, full_item_name, dosage_form, dosage_strength, dosage_unit,
+            norm_generic_name, norm_dosage_form, norm_dosage_strength,
             raw_json, scraped_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
         )
         ON CONFLICT(id) DO UPDATE SET
             product_name = excluded.product_name,
@@ -214,6 +261,9 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             dosage_form = excluded.dosage_form,
             dosage_strength = excluded.dosage_strength,
             dosage_unit = excluded.dosage_unit,
+            norm_generic_name = excluded.norm_generic_name,
+            norm_dosage_form = excluded.norm_dosage_form,
+            norm_dosage_strength = excluded.norm_dosage_strength,
             raw_json = excluded.raw_json,
             scraped_at = excluded.scraped_at
         """,
@@ -223,7 +273,7 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             import_permit_number,
             item.get("productID"),
             product.get("name"),
-            product.get("genericName"),
+            generic_name,
             product.get("brandName"),
             product.get("description"),
             product.get("indication"),
@@ -240,9 +290,12 @@ def upsert_product(conn: sqlite3.Connection, item: dict, import_permit_number: s
             item.get("amount"),
             item.get("isAccessory"),
             product.get("fullItemName"),
-            product.get("dosageForm") or product.get("dosageFormStr"),
-            product.get("dosageStrength") or product.get("dosageStrengthStr"),
+            dosage_form,
+            dosage_strength,
             product.get("dosageUnit") or product.get("dosageUnitName"),
+            normalize_generic_name(generic_name) if generic_name else None,
+            normalize_dosage_form(dosage_form) if dosage_form else None,
+            normalize_dosage_strength(dosage_strength) if dosage_strength else None,
             json.dumps(item, default=str),
         ),
     )
@@ -294,6 +347,7 @@ async def scrape_products(limit: int | None = None):
     conn.execute("PRAGMA journal_mode=WAL")
     init_products_table(conn)
     backfill_from_raw_json(conn)
+    backfill_normalized_columns(conn)
 
     # Step 3: Get import IDs to process
     # Skip imports we've already scraped products for

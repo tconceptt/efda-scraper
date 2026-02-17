@@ -140,9 +140,46 @@ export interface ProductFilters {
 // ─── Generic Product Grouping ──────────────────────────────────────────────
 // Products are grouped by: generic_name + dosage_form + dosage_strength
 // This groups all brands of the same drug/device formulation together.
+// Uses normalized columns when available, falling back to originals for
+// backwards compatibility with older Turso schemas.
 
-/** SQL expression that produces the grouping key */
-const GROUP_KEY_SQL = `LOWER(TRIM(p.generic_name)) || '||' || LOWER(TRIM(COALESCE(p.dosage_form, ''))) || '||' || LOWER(TRIM(COALESCE(p.dosage_strength, '')))`;
+const NORM_GROUP_KEY_SQL = `LOWER(TRIM(COALESCE(p.norm_generic_name, p.generic_name))) || '||' || LOWER(TRIM(COALESCE(p.norm_dosage_form, p.dosage_form, ''))) || '||' || LOWER(TRIM(COALESCE(p.norm_dosage_strength, p.dosage_strength, '')))`;
+const ORIG_GROUP_KEY_SQL = `LOWER(TRIM(p.generic_name)) || '||' || LOWER(TRIM(COALESCE(p.dosage_form, ''))) || '||' || LOWER(TRIM(COALESCE(p.dosage_strength, '')))`;
+
+/** Cached result of column detection */
+let _normAvailable: boolean | null = null;
+
+/** Check once whether the norm_* columns exist in the remote DB */
+async function hasNormColumns(): Promise<boolean> {
+  if (_normAvailable !== null) return _normAvailable;
+  try {
+    const db = getDb();
+    await db.execute({ sql: "SELECT norm_generic_name FROM import_permit_products LIMIT 1", args: [] });
+    _normAvailable = true;
+  } catch {
+    _normAvailable = false;
+  }
+  return _normAvailable;
+}
+
+/** SQL expression that produces the grouping key (auto-detects schema) */
+async function getGroupKeySql(): Promise<string> {
+  return (await hasNormColumns()) ? NORM_GROUP_KEY_SQL : ORIG_GROUP_KEY_SQL;
+}
+
+/** SQL fragments for display columns in aggregated queries */
+async function getNormSelectFragments(): Promise<{ genericName: string; dosageForm: string }> {
+  if (await hasNormColumns()) {
+    return {
+      genericName: `COALESCE(p.norm_generic_name, p.generic_name)`,
+      dosageForm: `COALESCE(p.norm_dosage_form, p.dosage_form)`,
+    };
+  }
+  return {
+    genericName: `p.generic_name`,
+    dosageForm: `p.dosage_form`,
+  };
+}
 
 /** Build the same key from JS values (for URL encoding) */
 export function makeProductSlug(
@@ -469,6 +506,9 @@ export async function getAggregatedProducts(
   sortBy = "order_count",
   sortDir: "asc" | "desc" = "desc"
 ): Promise<PaginatedResult<AggregatedProductRow>> {
+  const GROUP_KEY = await getGroupKeySql();
+  const { genericName, dosageForm } = await getNormSelectFragments();
+
   const conditions: string[] = [
     `p.generic_name IS NOT NULL`,
     `p.generic_name != ''`,
@@ -506,7 +546,7 @@ export async function getAggregatedProducts(
       SELECT 1 FROM import_permit_products p
       JOIN import_permits i ON p.import_permit_id = i.id
       ${where}
-      GROUP BY ${GROUP_KEY_SQL}
+      GROUP BY ${GROUP_KEY}
     )`,
     params
   );
@@ -515,9 +555,9 @@ export async function getAggregatedProducts(
   const offset = (page - 1) * pageSize;
   const data = await queryAll<Omit<AggregatedProductRow, "slug"> & { group_key: string }>(
     `SELECT
-      ${GROUP_KEY_SQL} as group_key,
-      p.generic_name,
-      p.dosage_form,
+      ${GROUP_KEY} as group_key,
+      ${genericName} as generic_name,
+      ${dosageForm} as dosage_form,
       p.dosage_strength,
       p.dosage_unit,
       COUNT(DISTINCT p.product_id) as brand_count,
@@ -529,7 +569,7 @@ export async function getAggregatedProducts(
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
     ${where}
-    GROUP BY ${GROUP_KEY_SQL}
+    GROUP BY ${GROUP_KEY}
     ORDER BY ${safeSort} ${safeDir}
     LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]
@@ -626,6 +666,7 @@ export async function getPorts(): Promise<string[]> {
 // ─── Product Detail Queries (by group key) ──────────────────────────────────
 
 export async function getProductBySlug(slug: string): Promise<ProductInfo | null> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryOne<ProductInfo>(
     `SELECT
@@ -636,13 +677,14 @@ export async function getProductBySlug(slug: string): Promise<ProductInfo | null
       GROUP_CONCAT(DISTINCT p.product_name) as brand_names,
       GROUP_CONCAT(DISTINCT p.manufacturer_name) as manufacturer_names
     FROM import_permit_products p
-    WHERE ${GROUP_KEY_SQL} = ?
-    GROUP BY ${GROUP_KEY_SQL}`,
+    WHERE ${GROUP_KEY} = ?
+    GROUP BY ${GROUP_KEY}`,
     [groupKey]
   );
 }
 
 export async function getProductStatsBySlug(slug: string): Promise<ProductStats> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   const row = await queryOne<ProductStats>(
     `SELECT
@@ -657,13 +699,14 @@ export async function getProductStatsBySlug(slug: string): Promise<ProductStats>
       COUNT(DISTINCT p.product_id) as uniqueBrands
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ?`,
+    WHERE ${GROUP_KEY} = ?`,
     [groupKey]
   );
   return row!;
 }
 
 export async function getProductPriceTrendBySlug(slug: string): Promise<ProductPriceTrend[]> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryAll<ProductPriceTrend>(
     `SELECT
@@ -674,7 +717,7 @@ export async function getProductPriceTrendBySlug(slug: string): Promise<ProductP
       COUNT(*) as order_count
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ? AND i.requested_date IS NOT NULL AND p.unit_price > 0
+    WHERE ${GROUP_KEY} = ? AND i.requested_date IS NOT NULL AND p.unit_price > 0
     GROUP BY month
     ORDER BY month`,
     [groupKey]
@@ -682,6 +725,7 @@ export async function getProductPriceTrendBySlug(slug: string): Promise<ProductP
 }
 
 export async function getProductMonthlyVolumeBySlug(slug: string): Promise<ProductMonthlyVolume[]> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryAll<ProductMonthlyVolume>(
     `SELECT
@@ -690,7 +734,7 @@ export async function getProductMonthlyVolumeBySlug(slug: string): Promise<Produ
       COUNT(DISTINCT p.import_permit_id) as order_count
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ? AND i.requested_date IS NOT NULL
+    WHERE ${GROUP_KEY} = ? AND i.requested_date IS NOT NULL
     GROUP BY month
     ORDER BY month`,
     [groupKey]
@@ -698,6 +742,7 @@ export async function getProductMonthlyVolumeBySlug(slug: string): Promise<Produ
 }
 
 export async function getProductSupplierPricesBySlug(slug: string): Promise<ProductSupplierPrice[]> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryAll<ProductSupplierPrice>(
     `SELECT
@@ -707,7 +752,7 @@ export async function getProductSupplierPricesBySlug(slug: string): Promise<Prod
       COALESCE(SUM(p.amount), 0) as total_value
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ? AND i.supplier_name IS NOT NULL AND i.supplier_name != ''
+    WHERE ${GROUP_KEY} = ? AND i.supplier_name IS NOT NULL AND i.supplier_name != ''
     GROUP BY i.supplier_name
     ORDER BY avg_price ASC`,
     [groupKey]
@@ -715,6 +760,7 @@ export async function getProductSupplierPricesBySlug(slug: string): Promise<Prod
 }
 
 export async function getProductTopImportersBySlug(slug: string, limit = 10): Promise<ProductImporterStat[]> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryAll<ProductImporterStat>(
     `SELECT
@@ -724,7 +770,7 @@ export async function getProductTopImportersBySlug(slug: string, limit = 10): Pr
       COALESCE(SUM(p.quantity), 0) as total_quantity
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ? AND i.agent_name IS NOT NULL AND i.agent_name != ''
+    WHERE ${GROUP_KEY} = ? AND i.agent_name IS NOT NULL AND i.agent_name != ''
     GROUP BY i.agent_name
     ORDER BY total_spend DESC
     LIMIT ?`,
@@ -733,6 +779,7 @@ export async function getProductTopImportersBySlug(slug: string, limit = 10): Pr
 }
 
 export async function getProductMonthlySupplierBySlug(slug: string): Promise<ProductMonthlySupplier[]> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
   return queryAll<ProductMonthlySupplier>(
     `SELECT
@@ -743,7 +790,7 @@ export async function getProductMonthlySupplierBySlug(slug: string): Promise<Pro
       COUNT(*) as order_count
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ? AND i.requested_date IS NOT NULL
+    WHERE ${GROUP_KEY} = ? AND i.requested_date IS NOT NULL
       AND i.supplier_name IS NOT NULL AND i.supplier_name != ''
     GROUP BY month, i.supplier_name
     ORDER BY month`,
@@ -756,10 +803,11 @@ export async function getProductOrderHistoryBySlug(
   page = 1,
   pageSize = 25
 ): Promise<PaginatedResult<ProductOrderRow>> {
+  const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
 
   const countRow = await queryOne<{ count: number }>(
-    `SELECT COUNT(*) as count FROM import_permit_products p WHERE ${GROUP_KEY_SQL} = ?`,
+    `SELECT COUNT(*) as count FROM import_permit_products p WHERE ${GROUP_KEY} = ?`,
     [groupKey]
   );
   const total = countRow?.count ?? 0;
@@ -772,7 +820,7 @@ export async function getProductOrderHistoryBySlug(
       p.quantity, p.unit_price, p.amount
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY_SQL} = ?
+    WHERE ${GROUP_KEY} = ?
     ORDER BY i.requested_date DESC
     LIMIT ? OFFSET ?`,
     [groupKey, pageSize, offset]
@@ -785,4 +833,115 @@ export async function getProductOrderHistoryBySlug(
     pageSize,
     totalPages: Math.ceil(total / pageSize),
   };
+}
+
+// ─── Analytics: Product Intelligence ─────────────────────────────────────────
+
+export interface ProductPriceSpread {
+  generic_name: string;
+  dosage_form: string | null;
+  dosage_strength: string | null;
+  order_count: number;
+  avg_price: number;
+  min_price: number;
+  max_price: number;
+  spread_pct: number;
+}
+
+/** Top products with the widest price variation — biggest negotiation opportunities */
+export async function getTopProductPriceSpreads(limit = 15): Promise<ProductPriceSpread[]> {
+  const GROUP_KEY = await getGroupKeySql();
+  const { genericName, dosageForm } = await getNormSelectFragments();
+  const rows = await queryAll<Omit<ProductPriceSpread, "spread_pct">>(
+    `SELECT
+      ${genericName} as generic_name,
+      ${dosageForm} as dosage_form,
+      p.dosage_strength,
+      COUNT(DISTINCT p.import_permit_id) as order_count,
+      AVG(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as avg_price,
+      MIN(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as min_price,
+      MAX(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as max_price
+    FROM import_permit_products p
+    WHERE p.generic_name IS NOT NULL AND p.generic_name != '' AND p.unit_price > 0
+    GROUP BY ${GROUP_KEY}
+    HAVING order_count >= 5 AND min_price < max_price
+    ORDER BY (max_price - min_price) * 1.0 / avg_price DESC
+    LIMIT ?`,
+    [limit]
+  );
+  return rows.map((r) => ({
+    ...r,
+    spread_pct: Math.round(((r.max_price - r.min_price) / r.avg_price) * 100),
+  }));
+}
+
+export interface ProductGrowth {
+  generic_name: string;
+  dosage_form: string | null;
+  dosage_strength: string | null;
+  recent_orders: number;
+  prior_orders: number;
+  growth_pct: number;
+}
+
+/** Products with the highest growth in import orders (recent 6 months vs prior 6 months) */
+export async function getProductVolumeGrowth(limit = 15): Promise<ProductGrowth[]> {
+  const GROUP_KEY = await getGroupKeySql();
+  const { genericName, dosageForm } = await getNormSelectFragments();
+  const rows = await queryAll<Omit<ProductGrowth, "growth_pct">>(
+    `WITH bounds AS (
+      SELECT
+        MAX(requested_date) as latest,
+        date(MAX(requested_date), '-6 months') as mid,
+        date(MAX(requested_date), '-12 months') as earliest
+      FROM import_permits WHERE requested_date IS NOT NULL
+    )
+    SELECT
+      ${genericName} as generic_name,
+      ${dosageForm} as dosage_form,
+      p.dosage_strength,
+      COUNT(DISTINCT CASE WHEN i.requested_date >= b.mid THEN p.import_permit_id END) as recent_orders,
+      COUNT(DISTINCT CASE WHEN i.requested_date < b.mid AND i.requested_date >= b.earliest THEN p.import_permit_id END) as prior_orders
+    FROM import_permit_products p
+    JOIN import_permits i ON p.import_permit_id = i.id
+    CROSS JOIN bounds b
+    WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
+      AND i.requested_date >= b.earliest
+    GROUP BY ${GROUP_KEY}
+    HAVING prior_orders >= 3 AND recent_orders >= 1
+    ORDER BY (CAST(recent_orders AS REAL) / MAX(1, prior_orders)) DESC
+    LIMIT ?`,
+    [limit]
+  );
+  return rows.map((r) => ({
+    ...r,
+    growth_pct: Math.round(((r.recent_orders / Math.max(1, r.prior_orders)) - 1) * 100),
+  }));
+}
+
+export interface DosageFormMarket {
+  dosage_form: string;
+  order_count: number;
+  total_value: number;
+  product_count: number;
+}
+
+/** Market breakdown by dosage form category */
+export async function getDosageFormMarketShare(): Promise<DosageFormMarket[]> {
+  const { dosageForm } = await getNormSelectFragments();
+  const GROUP_KEY = await getGroupKeySql();
+  return queryAll<DosageFormMarket>(
+    `SELECT
+      ${dosageForm} as dosage_form,
+      COUNT(DISTINCT p.import_permit_id) as order_count,
+      COALESCE(SUM(p.amount), 0) as total_value,
+      COUNT(DISTINCT ${GROUP_KEY}) as product_count
+    FROM import_permit_products p
+    WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
+      AND p.dosage_form IS NOT NULL AND p.dosage_form != ''
+    GROUP BY ${dosageForm}
+    HAVING total_value > 0
+    ORDER BY total_value DESC
+    LIMIT 12`
+  );
 }

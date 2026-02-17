@@ -106,6 +106,27 @@ async function main() {
     }
   }
 
+  // 1b. Add any new columns not in original CREATE TABLE (schema evolution)
+  console.log("\n--- Adding new columns (if any) ---");
+  for (const table of TABLES) {
+    const localCols = sqliteExec(`PRAGMA table_info(${table})`)
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const parts = line.split("|");
+        return { name: parts[1], type: parts[2] || "TEXT" };
+      });
+
+    for (const col of localCols) {
+      try {
+        await client.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`  Added column ${table}.${col.name}`);
+      } catch {
+        // column already exists — expected
+      }
+    }
+  }
+
   // 2. Push data table by table
   const syncCounts = {};
 

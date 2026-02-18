@@ -139,6 +139,14 @@ export interface ProductFilters {
   dateTo?: string;
 }
 
+export interface AnalyticsFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  type?: string; // "MDCN" | "MD"
+  lookback?: number; // months for growth/decline reports
+  minPriorOrders?: number; // minimum prior-period orders for decline report
+}
+
 // ─── Generic Product Grouping ──────────────────────────────────────────────
 // Products are grouped by: generic_name + dosage_form + dosage_strength
 // This groups all brands of the same drug/device formulation together.
@@ -328,7 +336,13 @@ export async function getImportsOverTime(): Promise<MonthlyData[]> {
   );
 }
 
-export async function getMonthlyByType(): Promise<MonthlyByType[]> {
+export async function getMonthlyByType(filters?: AnalyticsFilters): Promise<MonthlyByType[]> {
+  const conditions: string[] = ["requested_date IS NOT NULL"];
+  const params: (string | number)[] = [];
+  if (filters?.dateFrom) { conditions.push("requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("submodule_type_code = ?"); params.push(filters.type); }
+  const where = `WHERE ${conditions.join(" AND ")}`;
   return queryAll<MonthlyByType>(
     `SELECT
       strftime('%Y-%m', requested_date) as month,
@@ -337,9 +351,10 @@ export async function getMonthlyByType(): Promise<MonthlyByType[]> {
       SUM(CASE WHEN submodule_type_code = 'MD' THEN 1 ELSE 0 END) as md_count,
       SUM(CASE WHEN submodule_type_code = 'MD' THEN COALESCE(amount, 0) ELSE 0 END) as md_value
     FROM import_permits
-    WHERE requested_date IS NOT NULL
+    ${where}
     GROUP BY month
-    ORDER BY month`
+    ORDER BY month`,
+    params
   );
 }
 
@@ -608,33 +623,48 @@ export async function getAggregatedProducts(
   };
 }
 
-export async function getTopManufacturers(limit = 10): Promise<ManufacturerStat[]> {
+export async function getTopManufacturers(limit = 10, filters?: AnalyticsFilters): Promise<ManufacturerStat[]> {
+  const conditions: string[] = ["p.manufacturer_name IS NOT NULL", "p.manufacturer_name != ''"];
+  const params: (string | number)[] = [];
+  const needsJoin = !!(filters?.dateFrom || filters?.dateTo || filters?.type);
+  if (filters?.dateFrom) { conditions.push("i.requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("i.requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("i.submodule_type_code = ?"); params.push(filters.type); }
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const join = needsJoin ? "JOIN import_permits i ON p.import_permit_id = i.id" : "";
   return queryAll<ManufacturerStat>(
     `SELECT
-      manufacturer_name as name,
+      p.manufacturer_name as name,
       COUNT(*) as count,
-      COALESCE(SUM(amount), 0) as value
-    FROM import_permit_products
-    WHERE manufacturer_name IS NOT NULL AND manufacturer_name != ''
-    GROUP BY manufacturer_name
+      COALESCE(SUM(p.amount), 0) as value
+    FROM import_permit_products p
+    ${join}
+    ${where}
+    GROUP BY p.manufacturer_name
     ORDER BY count DESC
     LIMIT ?`,
-    [limit]
+    [...params, limit]
   );
 }
 
-export async function getTopAgents(limit = 20): Promise<SupplierStat[]> {
+export async function getTopAgents(limit = 20, filters?: AnalyticsFilters): Promise<SupplierStat[]> {
+  const conditions: string[] = ["agent_name IS NOT NULL", "agent_name != ''"];
+  const params: (string | number)[] = [];
+  if (filters?.dateFrom) { conditions.push("requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("submodule_type_code = ?"); params.push(filters.type); }
+  const where = `WHERE ${conditions.join(" AND ")}`;
   return queryAll<SupplierStat>(
     `SELECT
       agent_name as name,
       COUNT(*) as count,
       COALESCE(SUM(amount), 0) as value
     FROM import_permits
-    WHERE agent_name IS NOT NULL AND agent_name != ''
+    ${where}
     GROUP BY agent_name
     ORDER BY value DESC
     LIMIT ?`,
-    [limit]
+    [...params, limit]
   );
 }
 
@@ -651,15 +681,22 @@ export async function getPortsOverTime(): Promise<{ month: string; port: string;
   );
 }
 
-export async function getAvgOrderValueTrend(): Promise<{ month: string; avg_value: number }[]> {
+export async function getAvgOrderValueTrend(filters?: AnalyticsFilters): Promise<{ month: string; avg_value: number }[]> {
+  const conditions: string[] = ["requested_date IS NOT NULL", "amount > 0"];
+  const params: (string | number)[] = [];
+  if (filters?.dateFrom) { conditions.push("requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("submodule_type_code = ?"); params.push(filters.type); }
+  const where = `WHERE ${conditions.join(" AND ")}`;
   return queryAll<{ month: string; avg_value: number }>(
     `SELECT
       strftime('%Y-%m', requested_date) as month,
       AVG(amount) as avg_value
     FROM import_permits
-    WHERE requested_date IS NOT NULL AND amount > 0
+    ${where}
     GROUP BY month
-    ORDER BY month`
+    ORDER BY month`,
+    params
   );
 }
 
@@ -715,9 +752,14 @@ export async function getProductStatsBySlug(slug: string): Promise<ProductStats>
   return row!;
 }
 
-export async function getProductPriceTrendBySlug(slug: string): Promise<ProductPriceTrend[]> {
+export async function getProductPriceTrendBySlug(slug: string, filters?: AnalyticsFilters): Promise<ProductPriceTrend[]> {
   const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
+  const conditions: string[] = [`${GROUP_KEY} = ?`, "i.requested_date IS NOT NULL", "p.unit_price > 0"];
+  const params: (string | number)[] = [groupKey];
+  if (filters?.dateFrom) { conditions.push("i.requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("i.requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("i.submodule_type_code = ?"); params.push(filters.type); }
   return queryAll<ProductPriceTrend>(
     `SELECT
       strftime('%Y-%m', i.requested_date) as month,
@@ -727,16 +769,21 @@ export async function getProductPriceTrendBySlug(slug: string): Promise<ProductP
       COUNT(*) as order_count
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY} = ? AND i.requested_date IS NOT NULL AND p.unit_price > 0
+    WHERE ${conditions.join(" AND ")}
     GROUP BY month
     ORDER BY month`,
-    [groupKey]
+    params
   );
 }
 
-export async function getProductMonthlyVolumeBySlug(slug: string): Promise<ProductMonthlyVolume[]> {
+export async function getProductMonthlyVolumeBySlug(slug: string, filters?: AnalyticsFilters): Promise<ProductMonthlyVolume[]> {
   const GROUP_KEY = await getGroupKeySql();
   const groupKey = decodeProductSlug(slug);
+  const conditions: string[] = [`${GROUP_KEY} = ?`, "i.requested_date IS NOT NULL"];
+  const params: (string | number)[] = [groupKey];
+  if (filters?.dateFrom) { conditions.push("i.requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("i.requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("i.submodule_type_code = ?"); params.push(filters.type); }
   return queryAll<ProductMonthlyVolume>(
     `SELECT
       strftime('%Y-%m', i.requested_date) as month,
@@ -744,10 +791,10 @@ export async function getProductMonthlyVolumeBySlug(slug: string): Promise<Produ
       COUNT(DISTINCT p.import_permit_id) as order_count
     FROM import_permit_products p
     JOIN import_permits i ON p.import_permit_id = i.id
-    WHERE ${GROUP_KEY} = ? AND i.requested_date IS NOT NULL
+    WHERE ${conditions.join(" AND ")}
     GROUP BY month
     ORDER BY month`,
-    [groupKey]
+    params
   );
 }
 
@@ -860,12 +907,18 @@ export interface ProductPriceSpread {
 }
 
 /** Top products with the widest price variation — biggest negotiation opportunities */
-export async function getTopProductPriceSpreads(limit = 15, type?: string): Promise<ProductPriceSpread[]> {
+export async function getTopProductPriceSpreads(limit = 15, typeOrFilters?: string | AnalyticsFilters): Promise<ProductPriceSpread[]> {
   const GROUP_KEY = await getGroupKeySql();
   const { genericName, dosageForm } = await getNormSelectFragments();
-  const join = type ? `JOIN import_permits i ON p.import_permit_id = i.id` : "";
-  const typeFilter = type ? `AND i.submodule_type_code = ?` : "";
-  const params: (string | number)[] = type ? [type, limit] : [limit];
+  const filters: AnalyticsFilters | undefined = typeof typeOrFilters === "string" ? { type: typeOrFilters } : typeOrFilters;
+  const conditions: string[] = ["p.generic_name IS NOT NULL", "p.generic_name != ''", "p.unit_price > 0"];
+  const params: (string | number)[] = [];
+  const needsJoin = !!(filters?.dateFrom || filters?.dateTo || filters?.type);
+  if (filters?.dateFrom) { conditions.push("i.requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("i.requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("i.submodule_type_code = ?"); params.push(filters.type); }
+  const join = needsJoin ? "JOIN import_permits i ON p.import_permit_id = i.id" : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
   const rows = await queryAll<Omit<ProductPriceSpread, "spread_pct" | "slug">>(
     `SELECT
       ${genericName} as generic_name,
@@ -877,13 +930,12 @@ export async function getTopProductPriceSpreads(limit = 15, type?: string): Prom
       MAX(CASE WHEN p.unit_price > 0 THEN p.unit_price END) as max_price
     FROM import_permit_products p
     ${join}
-    WHERE p.generic_name IS NOT NULL AND p.generic_name != '' AND p.unit_price > 0
-      ${typeFilter}
+    ${where}
     GROUP BY ${GROUP_KEY}
     HAVING order_count >= 5 AND min_price < max_price
     ORDER BY (max_price - min_price) * 1.0 / avg_price DESC
     LIMIT ?`,
-    params
+    [...params, limit]
   );
   return rows.map((r) => ({
     ...r,
@@ -922,17 +974,41 @@ export interface ProductGrowth {
 }
 
 /** Products with the highest growth in import orders (recent 6 months vs prior 6 months) */
-export async function getProductVolumeGrowth(limit = 15): Promise<ProductGrowth[]> {
+export async function getProductVolumeGrowth(limit = 15, filters?: AnalyticsFilters): Promise<ProductGrowth[]> {
   const GROUP_KEY = await getGroupKeySql();
   const { genericName, dosageForm } = await getNormSelectFragments();
-  const rows = await queryAll<Omit<ProductGrowth, "growth_pct">>(
-    `WITH bounds AS (
+  const extraConditions: string[] = [];
+  const extraParams: (string | number)[] = [];
+  if (filters?.type) { extraConditions.push("i.submodule_type_code = ?"); extraParams.push(filters.type); }
+
+  // When date filters provided, use them as bounds instead of CTE auto-calculation
+  let boundsCte: string;
+  let dateFilter: string;
+  if (filters?.dateFrom && filters?.dateTo) {
+    boundsCte = `WITH bounds AS (
+      SELECT
+        ? as latest,
+        date(?, '-' || (julianday(?) - julianday(?)) / 2 || ' days') as mid,
+        ? as earliest
+      FROM (SELECT 1)
+    )`;
+    extraParams.unshift(filters.dateTo, filters.dateFrom, filters.dateTo, filters.dateFrom, filters.dateFrom);
+    dateFilter = `AND i.requested_date >= b.earliest AND i.requested_date < date(b.latest, '+1 day')`;
+  } else {
+    const lb = filters?.lookback ?? 6;
+    boundsCte = `WITH bounds AS (
       SELECT
         MAX(requested_date) as latest,
-        date(MAX(requested_date), '-6 months') as mid,
-        date(MAX(requested_date), '-12 months') as earliest
+        date(MAX(requested_date), '-${lb} months') as mid,
+        date(MAX(requested_date), '-${lb * 2} months') as earliest
       FROM import_permits WHERE requested_date IS NOT NULL
-    )
+    )`;
+    dateFilter = `AND i.requested_date >= b.earliest`;
+  }
+
+  const typeFilter = extraConditions.length > 0 ? `AND ${extraConditions.join(" AND ")}` : "";
+  const rows = await queryAll<Omit<ProductGrowth, "growth_pct">>(
+    `${boundsCte}
     SELECT
       ${genericName} as generic_name,
       ${dosageForm} as dosage_form,
@@ -943,12 +1019,58 @@ export async function getProductVolumeGrowth(limit = 15): Promise<ProductGrowth[
     JOIN import_permits i ON p.import_permit_id = i.id
     CROSS JOIN bounds b
     WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
-      AND i.requested_date >= b.earliest
+      ${dateFilter}
+      ${typeFilter}
     GROUP BY ${GROUP_KEY}
     HAVING prior_orders >= 3 AND recent_orders >= 1
     ORDER BY (CAST(recent_orders AS REAL) / MAX(1, prior_orders)) DESC
     LIMIT ?`,
-    [limit]
+    [...extraParams, limit]
+  );
+  return rows.map((r) => ({
+    ...r,
+    growth_pct: Math.round(((r.recent_orders / Math.max(1, r.prior_orders)) - 1) * 100),
+  }));
+}
+
+/** Products with the biggest decline in import orders (recent N months vs prior N months) */
+export async function getProductVolumeDecline(limit = 15, filters?: AnalyticsFilters): Promise<ProductGrowth[]> {
+  const GROUP_KEY = await getGroupKeySql();
+  const { genericName, dosageForm } = await getNormSelectFragments();
+  const extraConditions: string[] = [];
+  const extraParams: (string | number)[] = [];
+  if (filters?.type) { extraConditions.push("i.submodule_type_code = ?"); extraParams.push(filters.type); }
+
+  const lb = filters?.lookback ?? 6;
+  const boundsCte = `WITH bounds AS (
+    SELECT
+      MAX(requested_date) as latest,
+      date(MAX(requested_date), '-${lb} months') as mid,
+      date(MAX(requested_date), '-${lb * 2} months') as earliest
+    FROM import_permits WHERE requested_date IS NOT NULL
+  )`;
+  const dateFilter = `AND i.requested_date >= b.earliest`;
+
+  const typeFilter = extraConditions.length > 0 ? `AND ${extraConditions.join(" AND ")}` : "";
+  const rows = await queryAll<Omit<ProductGrowth, "growth_pct">>(
+    `${boundsCte}
+    SELECT
+      ${genericName} as generic_name,
+      ${dosageForm} as dosage_form,
+      p.dosage_strength,
+      COUNT(DISTINCT CASE WHEN i.requested_date >= b.mid THEN p.import_permit_id END) as recent_orders,
+      COUNT(DISTINCT CASE WHEN i.requested_date < b.mid AND i.requested_date >= b.earliest THEN p.import_permit_id END) as prior_orders
+    FROM import_permit_products p
+    JOIN import_permits i ON p.import_permit_id = i.id
+    CROSS JOIN bounds b
+    WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
+      ${dateFilter}
+      ${typeFilter}
+    GROUP BY ${GROUP_KEY}
+    HAVING prior_orders >= ? AND recent_orders < prior_orders
+    ORDER BY (CAST(recent_orders AS REAL) / MAX(1, prior_orders)) ASC
+    LIMIT ?`,
+    [...extraParams, filters?.minPriorOrders ?? 10, limit]
   );
   return rows.map((r) => ({
     ...r,
@@ -964,9 +1086,20 @@ export interface DosageFormMarket {
 }
 
 /** Market breakdown by dosage form category */
-export async function getDosageFormMarketShare(): Promise<DosageFormMarket[]> {
+export async function getDosageFormMarketShare(filters?: AnalyticsFilters): Promise<DosageFormMarket[]> {
   const { dosageForm } = await getNormSelectFragments();
   const GROUP_KEY = await getGroupKeySql();
+  const conditions: string[] = [
+    "p.generic_name IS NOT NULL", "p.generic_name != ''",
+    "p.dosage_form IS NOT NULL", "p.dosage_form != ''",
+  ];
+  const params: (string | number)[] = [];
+  const needsJoin = !!(filters?.dateFrom || filters?.dateTo || filters?.type);
+  if (filters?.dateFrom) { conditions.push("i.requested_date >= ?"); params.push(filters.dateFrom); }
+  if (filters?.dateTo) { conditions.push("i.requested_date < date(?, '+1 day')"); params.push(filters.dateTo); }
+  if (filters?.type) { conditions.push("i.submodule_type_code = ?"); params.push(filters.type); }
+  const join = needsJoin ? "JOIN import_permits i ON p.import_permit_id = i.id" : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
   return queryAll<DosageFormMarket>(
     `SELECT
       ${dosageForm} as dosage_form,
@@ -974,11 +1107,51 @@ export async function getDosageFormMarketShare(): Promise<DosageFormMarket[]> {
       COALESCE(SUM(p.amount), 0) as total_value,
       COUNT(DISTINCT ${GROUP_KEY}) as product_count
     FROM import_permit_products p
-    WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
-      AND p.dosage_form IS NOT NULL AND p.dosage_form != ''
+    ${join}
+    ${where}
     GROUP BY ${dosageForm}
     HAVING total_value > 0
     ORDER BY total_value DESC
-    LIMIT 12`
+    LIMIT 12`,
+    params
   );
+}
+
+// ─── Product Search (for compare product picker) ─────────────────────────────
+
+export interface ProductSearchResult {
+  slug: string;
+  generic_name: string;
+  dosage_form: string | null;
+  dosage_strength: string | null;
+  order_count: number;
+}
+
+export async function searchProductsByName(query: string, limit = 20): Promise<ProductSearchResult[]> {
+  const GROUP_KEY = await getGroupKeySql();
+  const { genericName, dosageForm } = await getNormSelectFragments();
+  const like = `%${query}%`;
+  const rows = await queryAll<Omit<ProductSearchResult, "slug"> & { group_key: string }>(
+    `SELECT
+      ${GROUP_KEY} as group_key,
+      ${genericName} as generic_name,
+      ${dosageForm} as dosage_form,
+      p.dosage_strength,
+      COUNT(DISTINCT p.import_permit_id) as order_count
+    FROM import_permit_products p
+    WHERE p.generic_name IS NOT NULL AND p.generic_name != ''
+      AND p.generic_name LIKE ?
+    GROUP BY ${GROUP_KEY}
+    HAVING order_count >= 2
+    ORDER BY order_count DESC
+    LIMIT ?`,
+    [like, limit]
+  );
+  return rows.map((row) => ({
+    slug: encodeURIComponent(Buffer.from(row.group_key).toString("base64url")),
+    generic_name: row.generic_name,
+    dosage_form: row.dosage_form,
+    dosage_strength: row.dosage_strength,
+    order_count: row.order_count,
+  }));
 }

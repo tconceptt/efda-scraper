@@ -20,7 +20,7 @@ const LOOKBACK_LABELS: Record<string, string> = {
   "12": "Last Year",
 };
 
-export function ProductGrowthChart({
+export function ProductDeclineChart({
   data,
   lookback = 6,
 }: {
@@ -28,15 +28,16 @@ export function ProductGrowthChart({
   lookback?: number;
 }) {
   const periodLabel = LOOKBACK_LABELS[String(lookback)] ?? `Last ${lookback} Months`;
+
   if (data.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Fastest Growing Products</CardTitle>
+          <CardTitle className="text-base">Declining Products</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex h-[350px] items-center justify-center text-muted-foreground">
-            Not enough data yet.
+            No declining products found for this period.
           </div>
         </CardContent>
       </Card>
@@ -47,10 +48,10 @@ export function ProductGrowthChart({
     <Card>
       <CardHeader>
         <CardTitle className="text-base">
-          Fastest Growing Products — {periodLabel}
+          Declining Products — {periodLabel}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Order growth vs the prior period. Rising demand signals import opportunities.
+          Order decline vs the prior period. Falling demand signals reduced import activity.
         </p>
       </CardHeader>
       <CardContent className="px-0 pb-3">
@@ -75,7 +76,12 @@ export function ProductGrowthChart({
                 <span className="text-muted-foreground">
                   {formatNumber(row.prior_orders)} → {formatNumber(row.recent_orders)} orders
                 </span>
-                <GrowthBadge value={row.growth_pct} />
+                <Badge
+                  variant="outline"
+                  className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                >
+                  {row.growth_pct}%
+                </Badge>
               </div>
             </div>
           ))}
@@ -117,7 +123,12 @@ export function ProductGrowthChart({
                     {formatNumber(row.recent_orders)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <GrowthBadge value={row.growth_pct} />
+                    <Badge
+                      variant="outline"
+                      className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                    >
+                      {row.growth_pct}%
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))}
@@ -126,22 +137,5 @@ export function ProductGrowthChart({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function GrowthBadge({ value }: { value: number }) {
-  const isPositive = value >= 0;
-  return (
-    <Badge
-      variant="outline"
-      className={
-        isPositive
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-          : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
-      }
-    >
-      {isPositive ? "+" : ""}
-      {value}%
-    </Badge>
   );
 }

@@ -28,7 +28,7 @@ export async function login(
   const password = formData.get("password") as string;
   const storedPassword = await getStoredPassword();
 
-  if (username !== DEFAULT_USERNAME || password !== storedPassword) {
+  if (username.toLowerCase() !== DEFAULT_USERNAME || password !== storedPassword) {
     return { error: "Invalid username or password" };
   }
 

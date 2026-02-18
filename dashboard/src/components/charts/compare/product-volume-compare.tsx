@@ -8,51 +8,50 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ManufacturerStat } from "@/lib/queries";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import type { ProductMonthlyVolume } from "@/lib/queries";
+import { formatNumber } from "@/lib/format";
+import { mergeProductVolume } from "@/lib/compare-transforms";
 
-export function TopManufacturers({ data }: { data: ManufacturerStat[] }) {
-  const chartData = data.map((d) => ({
-    ...d,
-    name: d.name.length > 30 ? d.name.slice(0, 27) + "..." : d.name,
-    fullName: d.name,
-  }));
+interface Props {
+  dataA: ProductMonthlyVolume[];
+  dataB: ProductMonthlyVolume[];
+  labelA: string;
+  labelB: string;
+  productName?: string;
+}
+
+export function ProductVolumeCompare({ dataA, dataB, labelA, labelB, productName }: Props) {
+  const merged = mergeProductVolume(dataA, dataB);
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Top Manufacturers by Products</CardTitle>
+        <CardTitle className="text-base">
+          {productName ? `${productName} — ` : ""}Volume — {labelA} vs {labelB}
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[500px]">
+        <div className="h-[350px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 30 }}>
+            <BarChart data={merged}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis
-                type="number"
+                dataKey="label"
                 tick={{ fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
-                dataKey="name"
-                type="category"
-                width={180}
-                className="text-xs"
+                tickFormatter={(v) => formatNumber(v)}
                 tick={{ fill: "var(--muted-foreground)" }}
                 tickLine={false}
                 axisLine={false}
               />
               <Tooltip
-                formatter={(value, name) => [
-                  name === "Product Count" ? formatNumber(Number(value)) : formatCurrency(Number(value)),
-                  String(name),
-                ]}
-                labelFormatter={(_, payload) =>
-                  payload?.[0]?.payload?.fullName ?? ""
-                }
+                formatter={(value, name) => [formatNumber(Number(value)), String(name)]}
                 contentStyle={{
                   backgroundColor: "var(--popover)",
                   border: "1px solid var(--border)",
@@ -62,12 +61,9 @@ export function TopManufacturers({ data }: { data: ManufacturerStat[] }) {
                 labelStyle={{ color: "var(--popover-foreground)" }}
                 itemStyle={{ color: "var(--popover-foreground)" }}
               />
-              <Bar
-                dataKey="count"
-                name="Product Count"
-                fill="var(--chart-5)"
-                radius={[0, 4, 4, 0]}
-              />
+              <Legend />
+              <Bar dataKey="a_quantity" name={labelA} fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="b_quantity" name={labelB} fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
